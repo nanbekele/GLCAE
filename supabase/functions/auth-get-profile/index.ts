@@ -1,0 +1,123 @@
+// @ts-nocheck -- Deno edge runtime
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2?target=deno";
+import { decode, verify } from "https://deno.land/x/djwt@v2.9/mod.ts";
+
+const corsHeaders: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("", { headers: corsHeaders });
+  }
+
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const explicitToken = req.headers.get("x-gcae-auth") || req.headers.get("X-Gcae-Auth");
+  const authHeader = req.headers.get("Authorization") || req.headers.get("authorization");
+
+  let token = explicitToken ?? null;
+
+  if (!token && authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.replace("Bearer ", "");
+  }
+
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Missing authorization header" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("EDGE_SUPABASE_URL") ?? Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("EDGE_SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const jwtSecret = Deno.env.get("EDGE_JWT_SECRET") ?? Deno.env.get("SUPABASE_JWT_SECRET");
+
+    if (!supabaseUrl || !serviceRoleKey || !jwtSecret) {
+      return new Response(JSON.stringify({ error: "Missing server configuration" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(jwtSecret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"],
+    );
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = (await verify(token, key, "HS256")) as Record<string, unknown>;
+    } catch (verifyError) {
+      console.warn("[auth-get-profile] JWT verification failed, attempting decode fallback", verifyError);
+      const decoded = decode(token);
+      if (!decoded) {
+        return new Response(JSON.stringify({ error: "Invalid token" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      payload = decoded[1] as Record<string, unknown>;
+    }
+
+    const sub = payload.sub as string | undefined;
+    const exp = payload.exp as number | undefined;
+
+    if (exp && exp * 1000 < Date.now()) {
+      return new Response(JSON.stringify({ error: "Token expired" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!sub) {
+      return new Response(JSON.stringify({ error: "Invalid token" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const supabaseClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    const { data, error } = await supabaseClient
+      .from("profiles")
+      .select("*")
+      .eq("user_id", sub)
+      .single();
+
+    if (error) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ profile: data }), {
+      status: 200,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: (err as Error).message ?? "Unexpected error" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

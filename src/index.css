@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* GCAE Corporate Design System - Professional Engineering & Architecture Firm
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Professional Corporate Colors */
+    --background: 0 0% 99%;
+    --foreground: 222 24% 12%;
+
+    /* Executive Blue Palette */
+    --primary: 214 87% 27%;           /* Deep executive blue */
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 214 87% 35%;
+    --primary-dark: 214 87% 20%;
+
+    /* Professional Gray System */
+    --secondary: 215 20% 65%;         /* Professional gray */
+    --secondary-foreground: 0 0% 100%;
+    --secondary-dark: 215 25% 55%;
+
+    /* Executive Gold Accent */
+    --accent: 45 93% 47%;             /* Corporate gold */
+    --accent-foreground: 222 24% 12%;
+    --accent-light: 45 93% 55%;
+
+    /* Neutral Backgrounds */
+    --muted: 220 14% 96%;             /* Light backgrounds */
+    --muted-foreground: 220 9% 46%;
+    --muted-dark: 220 14% 92%;
+
+    /* Card System */
+    --card: 0 0% 98%;
+    --card-foreground: 222 24% 12%;
+    --card-border: 220 14% 90%;
+
+    /* Interactive Elements */
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 24% 12%;
+
+    /* Status Colors */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    /* Form Elements */
+    --border: 220 14% 96%;
+    --input: 220 14% 96%;
+    --ring: 214 87% 27%;
+
+    /* Layout */
+    --radius: 0.75rem;
+
+    /* Professional Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(214 87% 24%) 0%, hsl(214 87% 44%) 100%);
+    --gradient-hero: linear-gradient(135deg, hsl(214 87% 24% / 0.95) 0%, hsl(214 87% 40% / 0.95) 100%);
+    --gradient-accent: linear-gradient(135deg, hsl(45 93% 44%) 0%, hsl(45 93% 60%) 100%);
+    --gradient-corporate: linear-gradient(135deg, hsl(214 87% 24%) 0%, hsl(215 25% 45%) 100%);
+
+    /* Executive Shadows */
+    --shadow-corporate: 0 4px 24px hsl(214 87% 27% / 0.15);
+    --shadow-card: 0 2px 12px hsl(220 9% 46% / 0.08);
+    --shadow-hero: 0 8px 32px hsl(214 87% 27% / 0.2);
+    --shadow-elevated: 0 12px 40px hsl(214 87% 27% / 0.15);
+
+    /* Smooth Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-fast: all 0.2s ease;
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222 24% 8%;
+    --foreground: 220 14% 96%;
+
+    --card: 222 24% 10%;
+    --card-foreground: 220 14% 96%;
+    --card-border: 215 25% 18%;
+
+    --popover: 222 24% 10%;
+    --popover-foreground: 220 14% 96%;
+
+    /* Professional Dark Theme */
+    --primary: 214 87% 55%;           /* Lighter blue for dark mode */
+    --primary-foreground: 222 24% 8%;
+    --primary-light: 214 87% 65%;
+    --primary-dark: 214 87% 45%;
+
+    --secondary: 215 25% 25%;         /* Dark professional gray */
+    --secondary-foreground: 220 14% 96%;
+    --secondary-dark: 215 25% 18%;
+
+    --muted: 215 25% 18%;
+    --muted-foreground: 220 9% 65%;
+    --muted-dark: 215 25% 12%;
+
+    --accent: 45 93% 60%;             /* Brighter gold for dark mode */
+    --accent-foreground: 222 24% 8%;
+    --accent-light: 45 93% 70%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 220 14% 96%;
+    --success: 142 71% 55%;
+    --success-foreground: 222 24% 8%;
+
+    --border: 215 25% 18%;
+    --input: 215 25% 18%;
+    --ring: 214 87% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
