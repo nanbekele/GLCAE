@@ -108,7 +108,9 @@ const HeadReviewReports = () => {
     setError(null);
     try {
       const data = await fetchServiceRequestsAssignedTo(profile.id, 100);
-      const onlyReports = data.filter((r) => (r.title ?? "").toLowerCase().startsWith("report:"));
+      const onlyReports = data
+        .filter((r) => (r.title ?? "").toLowerCase().startsWith("report:"))
+        .filter((r) => (r.service_type ?? "").toLowerCase() !== "hr coordination");
       setReports(onlyReports);
     } catch (err: any) {
       setError(err?.message ?? "Failed to load submitted tasks.");
@@ -118,6 +120,12 @@ const HeadReviewReports = () => {
   };
 
   useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [profile?.id]);
+
+  const extractOriginalTaskId = (description?: string | null) => {
+    if (!description) return null;
+    const match = description.match(/Original Task ID:\s*([0-9a-fA-F-]{10,})/);
+    return match?.[1] ?? null;
+  };
 
   const handleVerify = async (id: string) => {
     setUpdatingId(id);
@@ -142,6 +150,12 @@ const HeadReviewReports = () => {
       const text = draft ? `Feedback: ${draft}` : "Feedback requested";
       await updateServiceRequestNotes(id, text);
       const target = reports.find((r) => r.id === id);
+
+      const originalTaskId = extractOriginalTaskId(target?.description);
+      if (originalTaskId) {
+        await updateServiceRequestStatus(originalTaskId, "in_progress");
+      }
+
       if (target?.client_id) {
         await shareServiceRequestWithEmployees(id, [target.client_id]);
       }
@@ -174,11 +188,14 @@ const HeadReviewReports = () => {
       const updatedRow = await updateServiceRequestServiceType(id, "HR Coordination");
       // Reflect immediately in local state so the button disables without waiting for reload
       setReports((prev) => prev.map((r) => (r.id === id ? { ...r, service_type: updatedRow.service_type } : r)));
+      if (hrId) {
+        setReports((prev) => prev.map((r) => (r.id === id ? { ...r, assigned_to: hrId } : r)));
+      }
       const who = profile?.full_name ?? "Department Head";
       const appendix = hrId ? "" : " (no HR staff available; forwarded unassigned)";
       await updateServiceRequestNotes(id, `${target.notes ? target.notes + "\n\n" : ""}Forwarded to HR by ${who}${appendix}`);
       toast({ title: "Sent to HR", description: "Report forwarded to HR dashboard." });
-      void load();
+      setReports((prev) => prev.filter((r) => r.id !== id));
     } catch (err: any) {
       toast({ title: "Forward failed", description: err?.message ?? "Try again.", variant: "destructive" });
     } finally {

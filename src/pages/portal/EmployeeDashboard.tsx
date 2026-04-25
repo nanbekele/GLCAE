@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useNavigate } from 'react-router-dom';
 import { 
   CheckSquare, 
+  CheckCheck,
   FolderOpen, 
   Calendar, 
   MessageSquare, 
@@ -60,17 +61,30 @@ const EmployeeDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
+  const isCompletedStatus = (value: string | null | undefined) => {
+    const status = (value ?? '').toLowerCase();
+    return ['completed', 'resolved', 'verified'].includes(status);
+  };
+
+  const openTasks = useMemo(() => myRequests.filter((r) => !isCompletedStatus(r.status)), [myRequests]);
+  const completedTasks = useMemo(() => myRequests.filter((r) => isCompletedStatus(r.status)), [myRequests]);
+
   const stats = useMemo(() => {
-    const openTickets = myRequests.filter(r => !['completed','resolved','verified'].includes((r.status ?? '').toLowerCase())).length;
+    const openTickets = openTasks.length;
     const scheduledSoon = myConsultancy.filter(c => !!c.schedule_at).length + interviews.length;
+    const completedSchedules =
+      myConsultancy.filter((c) => (c.status ?? '').toLowerCase() === 'completed').length +
+      interviews.filter((iv) => (iv.status ?? '').toLowerCase() === 'completed').length;
     return [
-      { title: 'My Tasks', value: String(myRequests.length), icon: CheckSquare, color: 'text-primary' },
+      { title: 'My Tasks', value: String(openTasks.length), icon: CheckSquare, color: 'text-primary' },
+      { title: 'Completed Tasks', value: String(completedTasks.length), icon: CheckCheck, color: 'text-success' },
       { title: 'Consultancy Sessions', value: String(myConsultancy.length), icon: Calendar, color: 'text-success' },
       { title: 'Interviews', value: String(interviews.length), icon: Calendar, color: 'text-accent' },
       { title: 'Open Tickets', value: String(openTickets), icon: FileText, color: 'text-accent' },
       { title: 'Scheduled Items', value: String(scheduledSoon), icon: Clock, color: 'text-warning' },
+      { title: 'Completed Schedules', value: String(completedSchedules), icon: CheckCheck, color: 'text-success' },
     ];
-  }, [myRequests.length, myConsultancy.length, interviews.length]);
+  }, [completedTasks.length, interviews, myConsultancy, openTasks.length]);
 
   const isToday = (iso: string | null | undefined) => {
     if (!iso) return false;
@@ -142,6 +156,7 @@ const EmployeeDashboard = () => {
   const quickActions = [
     { title: 'My Tasks', description: 'View and update assigned tasks', icon: CheckSquare },
     { title: 'Prepare Report', description: 'Submit a task report to your department head', icon: FolderOpen },
+    { title: 'Submitted/Done Tasks', description: 'View tasks you have completed and submitted', icon: CheckCheck },
     { title: 'Schedule', description: 'View meetings, deadlines and assigned tickets timeline', icon: Calendar },
   ];
 
@@ -149,6 +164,9 @@ const EmployeeDashboard = () => {
     switch (title) {
       case 'My Tasks':
         navigate('/portal/employee/tasks');
+        break;
+      case 'Submitted/Done Tasks':
+        navigate('/portal/employee/done-tasks');
         break;
       case 'Schedule':
         navigate('/portal/employee/schedule');
@@ -179,6 +197,29 @@ const EmployeeDashboard = () => {
           </div>
         </div>
 
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {stats.map((stat, index) => (
+            <Card key={index} className="shadow-card border-card-border">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {stat.title}
+                    </p>
+                    <p className="text-2xl font-bold text-foreground">
+                      {stat.value}
+                    </p>
+                  </div>
+                  <div className={`w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center ${stat.color}`}>
+                    <stat.icon size={24} className="text-primary-foreground" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {quickActions.map((action, index) => (
@@ -192,9 +233,7 @@ const EmployeeDashboard = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                <CardDescription className="mb-4">
-                  {action.description}
-                </CardDescription>
+                <CardDescription className="mb-4">{action.description}</CardDescription>
                 {action.title === 'My Tasks' && (
                   <div className="mb-4 space-y-2">
                     {error ? (
@@ -202,11 +241,40 @@ const EmployeeDashboard = () => {
                     ) : null}
                     {loading ? (
                       <div className="flex items-center text-muted-foreground text-sm"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Loading…</div>
-                    ) : myRequests.length === 0 ? (
+                    ) : openTasks.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No tasks yet.</p>
                     ) : (
                       <div className="space-y-2">
-                        {myRequests.slice(0, 3).map((req) => (
+                        {openTasks.slice(0, 3).map((req) => (
+                          <div key={req.id} className="p-2 border border-border rounded-md">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <h4 className="text-sm font-medium text-foreground line-clamp-1">{req.title}</h4>
+                                <p className="text-[11px] text-muted-foreground">{formatDistanceToNow(new Date(req.created_at), { addSuffix: true })}</p>
+                              </div>
+                              <div className="flex gap-1">
+                                <Badge variant="outline" className="uppercase">{req.service_type}</Badge>
+                                <Badge variant="secondary">{req.priority ?? '#'}</Badge>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {action.title === 'Submitted/Done Tasks' && (
+                  <div className="mb-4 space-y-2">
+                    {error ? (
+                      <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive">{error}</div>
+                    ) : null}
+                    {loading ? (
+                      <div className="flex items-center text-muted-foreground text-sm"><Loader2 className="mr-2 h-4 w-4 animate-spin"/> Loading…</div>
+                    ) : completedTasks.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No completed tasks yet.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {completedTasks.slice(0, 3).map((req) => (
                           <div key={req.id} className="p-2 border border-border rounded-md">
                             <div className="flex items-start justify-between gap-3">
                               <div>
@@ -232,29 +300,6 @@ const EmployeeDashboard = () => {
           ))}
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => (
-            <Card key={index} className="shadow-card border-card-border">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      {stat.title}
-                    </p>
-                    <p className="text-2xl font-bold text-foreground">
-                      {stat.value}
-                    </p>
-                  </div>
-                  <div className={`w-12 h-12 bg-gradient-primary rounded-xl flex items-center justify-center ${stat.color}`}>
-                    <stat.icon size={24} className="text-primary-foreground" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
 
         {/* Today's Tasks and Recent Activities */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -272,7 +317,7 @@ const EmployeeDashboard = () => {
                 ) : todaysItems.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nothing scheduled or assigned today.</p>
                 ) : (
-                  todaysItems.map((it) => (
+                  todaysItems.slice(0, 3).map((it) => (
                     <div key={it.id} className="p-3 border border-border rounded-lg">
                       <div className="flex items-start justify-between mb-2">
                         <h4 className="text-sm font-medium text-foreground">{it.title}</h4>
@@ -303,7 +348,7 @@ const EmployeeDashboard = () => {
                 ) : recentNotifications.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No recent activity.</p>
                 ) : (
-                  recentNotifications.map((n) => (
+                  recentNotifications.slice(0, 3).map((n) => (
                     <div key={n.id} className="flex items-start space-x-3 py-2 border-b border-border last:border-0">
                       <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0"></div>
                       <div className="flex-1">

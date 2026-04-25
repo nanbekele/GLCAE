@@ -52,7 +52,6 @@ const Projects = () => {
   const resolveMediaUrl = (mediaType: string | null, mediaUrl: string | null): string | null => {
     if (!mediaUrl) return null;
     if (mediaUrl.includes('://')) return mediaUrl;
-    if (mediaType !== 'image') return mediaUrl;
 
     const { data } = supabase.storage.from('project-media').getPublicUrl(mediaUrl);
     return data?.publicUrl ?? null;
@@ -203,9 +202,13 @@ const Projects = () => {
               >
                 <div className="relative overflow-hidden">
                   {project.mediaType === 'video' && project.mediaUrl ? (
-                    <div className="w-full h-48 bg-black flex items-center justify-center text-primary-foreground text-sm">
-                      Video preview unavailable
-                    </div>
+                    <video
+                      src={project.mediaUrl}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="w-full h-48 object-cover bg-black"
+                    />
                   ) : project.mediaUrl ? (
                     <img 
                       src={project.mediaUrl}

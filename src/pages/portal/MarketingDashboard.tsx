@@ -142,6 +142,31 @@ const fileToDataUrl = (file: File) => {
   });
 };
 
+const getMediaKind = (value: string | null | undefined): 'image' | 'video' | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith('data:')) {
+    if (trimmed.startsWith('data:video/')) return 'video';
+    if (trimmed.startsWith('data:image/')) return 'image';
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const path = url.pathname.toLowerCase();
+    if (path.match(/\.(mp4|webm|ogg|mov|m4v)$/)) return 'video';
+    if (path.match(/\.(png|jpe?g|gif|webp|bmp|svg)$/)) return 'image';
+    return null;
+  } catch {
+    const lower = trimmed.toLowerCase();
+    if (lower.match(/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/)) return 'video';
+    if (lower.match(/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/)) return 'image';
+    return null;
+  }
+ };
+
 const formatDate = (value: string | null) => {
   if (!value) return '—';
   try {
@@ -355,8 +380,8 @@ const MarketingDashboard = () => {
       setNewPostCoverPreview(dataUrl);
     } catch (error: any) {
       toast({
-        title: 'Image error',
-        description: error.message || 'Failed to read image',
+        title: 'Media error',
+        description: error.message || 'Failed to read media file',
         variant: 'destructive',
       });
     }
@@ -406,7 +431,7 @@ const MarketingDashboard = () => {
 
       toast({
         title: 'Success',
-        description: 'Post created successfully.',
+        description: 'Draft created successfully. Publish it to show on the public News page.',
       });
 
       setNewPost({
@@ -509,8 +534,8 @@ const MarketingDashboard = () => {
       setEditPost((prev) => prev ? ({ ...prev, coverImageDataUrl: dataUrl, removeCoverImage: false }) : prev);
     } catch (error: any) {
       toast({
-        title: 'Image error',
-        description: error.message || 'Failed to read image',
+        title: 'Media error',
+        description: error.message || 'Failed to read media file',
         variant: 'destructive',
       });
     }
@@ -785,16 +810,24 @@ const MarketingDashboard = () => {
                     <Input
                       id="coverImage"
                       type="file"
-                      accept="image/*"
+                      accept="image/*,video/*"
                       onChange={(event) => handleNewPostCoverUpload(event.target.files?.[0] ?? null)}
                     />
                     {newPostCoverPreview && (
                       <div className="flex items-center gap-3">
-                        <img
-                          src={newPostCoverPreview}
-                          alt="Cover preview"
-                          className="h-16 w-16 object-cover rounded"
-                        />
+                        {getMediaKind(newPostCoverPreview) === 'video' ? (
+                          <video
+                            src={newPostCoverPreview}
+                            controls
+                            className="h-16 w-28 rounded bg-black border"
+                          />
+                        ) : (
+                          <img
+                            src={newPostCoverPreview}
+                            alt="Cover preview"
+                            className="h-16 w-16 object-cover rounded"
+                          />
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -806,7 +839,7 @@ const MarketingDashboard = () => {
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Upload a featured image (optional). JPG or PNG recommended.
+                    Upload featured media (optional). Images (JPG/PNG) or video files supported.
                   </p>
                 </div>
 
@@ -878,11 +911,19 @@ const MarketingDashboard = () => {
                           <tr key={post.id} className="border-b last:border-0">
                             <td className="py-3 pr-4">
                               {post.coverImageUrl ? (
-                                <img
-                                  src={post.coverImageUrl}
-                                  alt={`${post.title} cover`}
-                                  className="h-12 w-12 object-cover rounded-md border"
-                                />
+                                getMediaKind(post.coverImageUrl) === 'video' ? (
+                                  <video
+                                    src={post.coverImageUrl}
+                                    className="h-12 w-20 rounded-md border bg-black"
+                                    muted
+                                  />
+                                ) : (
+                                  <img
+                                    src={post.coverImageUrl}
+                                    alt={`${post.title} cover`}
+                                    className="h-12 w-12 object-cover rounded-md border"
+                                  />
+                                )
                               ) : (
                                 <div className="h-12 w-12 border rounded-md flex items-center justify-center text-muted-foreground">
                                   <ImageIcon className="h-5 w-5" />
@@ -1112,16 +1153,24 @@ const MarketingDashboard = () => {
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                     <Input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,video/*"
                       onChange={(event) => handleEditCoverChange(event.target.files?.[0] ?? null)}
                     />
                     <div className="flex items-center gap-3">
                       {editPost.coverImageDataUrl || editPost.currentCoverUrl ? (
-                        <img
-                          src={editPost.coverImageDataUrl || editPost.currentCoverUrl || ''}
-                          alt="Cover preview"
-                          className="h-16 w-16 rounded object-cover border"
-                        />
+                        getMediaKind(editPost.coverImageDataUrl || editPost.currentCoverUrl) === 'video' ? (
+                          <video
+                            src={editPost.coverImageDataUrl || editPost.currentCoverUrl || ''}
+                            controls
+                            className="h-16 w-28 rounded border bg-black"
+                          />
+                        ) : (
+                          <img
+                            src={editPost.coverImageDataUrl || editPost.currentCoverUrl || ''}
+                            alt="Cover preview"
+                            className="h-16 w-16 rounded object-cover border"
+                          />
+                        )
                       ) : (
                         <div className="h-16 w-16 border rounded flex items-center justify-center text-muted-foreground">
                           <ImageIcon className="h-6 w-6" />

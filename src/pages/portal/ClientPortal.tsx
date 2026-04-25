@@ -15,6 +15,8 @@ import { createClientServiceRequest, uploadServiceRequestAttachments, fetchConsu
 
 interface ClientMessage {
   id: string;
+  name: string | null;
+  email: string;
   subject: string | null;
   message: string;
   created_at: string;
@@ -40,6 +42,7 @@ const ClientPortal = () => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
   const [sending, setSending] = useState(false);
+  const [showMessageForm, setShowMessageForm] = useState(false);
   const [messageForm, setMessageForm] = useState({
     firstName: '',
     lastName: '',
@@ -56,6 +59,40 @@ const ClientPortal = () => {
     if (profile?.id) {
       fetchClientData();
     }
+  }, [profile?.id]);
+
+  // Live updates for client messages
+  useEffect(() => {
+    if (!profile?.id) return;
+
+    const channel = supabase
+      .channel(`contact-messages-client-${profile.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'contact_messages', filter: `client_id=eq.${profile.id}` },
+        (payload) => {
+          const row = payload.new as any;
+          const mapped: ClientMessage = {
+            id: row.id,
+            name: row.name ?? null,
+            email: row.email,
+            subject: row.subject,
+            message: row.message,
+            created_at: row.created_at,
+            status: row.status,
+          };
+
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === mapped.id)) return prev;
+            return [mapped, ...prev];
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [profile?.id]);
 
   // Live updates for consultancy schedules (client view)
@@ -108,7 +145,7 @@ const ClientPortal = () => {
           .select('*')
           .eq('client_id', profile.id)
           .order('created_at', { ascending: false })
-          .limit(5),
+          .limit(50),
         supabase
           .from('service_requests')
           .select('*')
@@ -128,7 +165,16 @@ const ClientPortal = () => {
       } catch {}
 
       if (messagesRes.data) {
-        setMessages(messagesRes.data as ClientMessage[]);
+        const mapped = (messagesRes.data as any[]).map((row: any) => ({
+          id: row.id,
+          name: row.name ?? null,
+          email: row.email,
+          subject: row.subject,
+          message: row.message,
+          created_at: row.created_at,
+          status: row.status,
+        } as ClientMessage));
+        setMessages(mapped);
       }
       if (requestsRes.data) setServiceRequests(requestsRes.data);
     } catch (error) {
@@ -266,11 +312,13 @@ const ClientPortal = () => {
 
       setMessages((prev) => [{
         id: data.id,
+        name: (data as any).name ?? null,
+        email: (data as any).email,
         subject: data.subject,
         message: data.message,
         created_at: data.created_at,
         status: data.status,
-      }, ...prev].slice(0, 5));
+      }, ...prev]);
 
       toast({
         title: 'Message sent',
@@ -351,69 +399,69 @@ const ClientPortal = () => {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="shadow-card border-card-border">
+          <Card className="shadow-card border-card-border flex flex-col">
             <CardHeader>
               <CardTitle>Request Service</CardTitle>
               <CardDescription>Submit a new service request</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button className="w-full" asChild>
+            <CardContent className="flex flex-col flex-1">
+              <Button className="w-full mt-auto" asChild>
                 <Link to="/portal/client/service-requests">New Service Request</Link>
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card border-card-border">
+          <Card className="shadow-card border-card-border flex flex-col">
             <CardHeader>
               <CardTitle>Request Consultancy</CardTitle>
               <CardDescription>Ask for consultancy from a department</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button className="w-full" asChild>
+            <CardContent className="flex flex-col flex-1">
+              <Button className="w-full mt-auto" asChild>
                 <Link to="/portal/client/consultancy">Open Consultancy Form</Link>
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card border-card-border">
+          <Card className="shadow-card border-card-border flex flex-col">
             <CardHeader>
               <CardTitle>Interview Schedules</CardTitle>
               <CardDescription>Your upcoming interview appointments</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-col flex-1">
               <div className="mb-3 text-sm text-muted-foreground">
                 {interviewSchedules.length > 0 ? `${interviewSchedules.length} scheduled` : 'No interviews scheduled yet.'}
               </div>
-              <Button className="w-full" asChild>
+              <Button className="w-full mt-auto" asChild>
                 <Link to="/portal/client/interviews">Open Interview Schedules</Link>
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card border-card-border">
+          <Card className="shadow-card border-card-border flex flex-col">
             <CardHeader>
               <CardTitle>Consultancy Schedules</CardTitle>
               <CardDescription>Your scheduled consultancy sessions</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex flex-col flex-1">
               <div className="mb-3 text-sm text-muted-foreground">
                 {consultancyRequests.filter(c => !!c.schedule_at).length > 0
                   ? `${consultancyRequests.filter(c => !!c.schedule_at).length} scheduled`
                   : 'No consultancy scheduled yet.'}
               </div>
-              <Button className="w-full" asChild>
+              <Button className="w-full mt-auto" asChild>
                 <Link to="/portal/client/consultancy-schedules">Open Consultancy Schedules</Link>
               </Button>
             </CardContent>
           </Card>
 
-          <Card className="shadow-card border-card-border">
+          <Card className="shadow-card border-card-border flex flex-col">
             <CardHeader>
               <CardTitle>Done Task</CardTitle>
               <CardDescription>Reports shared to you by HR</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button className="w-full" asChild>
+            <CardContent className="flex flex-col flex-1">
+              <Button className="w-full mt-auto" asChild>
                 <Link to="/portal/client/done-tasks">Open Done Task</Link>
               </Button>
             </CardContent>
@@ -453,7 +501,7 @@ const ClientPortal = () => {
                 {serviceRequests.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No service requests</p>
                 ) : (
-                  serviceRequests.map((request) => (
+                  serviceRequests.slice(0, 2).map((request) => (
                     <div key={request.id} className="p-3 border border-border rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-medium text-foreground">{request.title}</h4>
@@ -486,7 +534,7 @@ const ClientPortal = () => {
                 {consultancyRequests.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No consultancy requests</p>
                 ) : (
-                  consultancyRequests.map((c) => (
+                  consultancyRequests.slice(0, 2).map((c) => (
                     <div key={c.id} className="p-3 border border-border rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <h4 className="text-sm font-medium text-foreground">{c.title}</h4>
@@ -509,110 +557,93 @@ const ClientPortal = () => {
         {/* Send a Message */}
         <Card className="shadow-card border-card-border">
           <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <MessageCircle size={20} />
-              <span>Send a Message</span>
-            </CardTitle>
+            <div className="flex items-start justify-between gap-3">
+              <CardTitle className="flex items-center space-x-2">
+                <MessageCircle size={20} />
+                <span>Send a Message</span>
+              </CardTitle>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowMessageForm((prev) => !prev)}
+              >
+                {showMessageForm ? 'Hide form' : 'Show form'}
+              </Button>
+            </div>
             <CardDescription>Reach the GCAE marketing team for updates or inquiries.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSendMessage} className="space-y-4 max-w-2xl">
-              <div className="grid grid-cols-1 gap-4">
+            {showMessageForm ? (
+              <form onSubmit={handleSendMessage} className="space-y-4 max-w-2xl">
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input
+                      id="firstName"
+                      placeholder="Enter your first name"
+                      value={messageForm.firstName}
+                      onChange={(event) => setMessageForm((prev) => ({ ...prev, firstName: event.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input
+                      id="lastName"
+                      placeholder="Enter your last name"
+                      value={messageForm.lastName}
+                      onChange={(event) => setMessageForm((prev) => ({ ...prev, lastName: event.target.value }))}
+                    />
+                  </div>
+                </div>
                 <div>
-                  <Label htmlFor="firstName">First Name</Label>
+                  <Label htmlFor="email">Email Address</Label>
                   <Input
-                    id="firstName"
-                    placeholder="Enter your first name"
-                    value={messageForm.firstName}
-                    onChange={(event) => setMessageForm((prev) => ({ ...prev, firstName: event.target.value }))}
+                    id="email"
+                    type="email"
+                    placeholder={profile?.email ?? 'Enter your email address'}
+                    value={messageForm.email}
+                    onChange={(event) => setMessageForm((prev) => ({ ...prev, email: event.target.value }))}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="lastName">Last Name</Label>
+                  <Label htmlFor="phone">Phone Number</Label>
                   <Input
-                    id="lastName"
-                    placeholder="Enter your last name"
-                    value={messageForm.lastName}
-                    onChange={(event) => setMessageForm((prev) => ({ ...prev, lastName: event.target.value }))}
+                    id="phone"
+                    placeholder={profile?.phone ?? 'Enter your phone number'}
+                    value={messageForm.phone}
+                    onChange={(event) => setMessageForm((prev) => ({ ...prev, phone: event.target.value }))}
                   />
                 </div>
-              </div>
-              <div>
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder={profile?.email ?? 'Enter your email address'}
-                  value={messageForm.email}
-                  onChange={(event) => setMessageForm((prev) => ({ ...prev, email: event.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  placeholder={profile?.phone ?? 'Enter your phone number'}
-                  value={messageForm.phone}
-                  onChange={(event) => setMessageForm((prev) => ({ ...prev, phone: event.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="subject">Subject</Label>
-                <Input
-                  id="subject"
-                  placeholder="What is this regarding?"
-                  value={messageForm.subject}
-                  onChange={(event) => setMessageForm((prev) => ({ ...prev, subject: event.target.value }))}
-                />
-              </div>
-              <div>
-                <Label htmlFor="messageBody">Message *</Label>
-                <Textarea
-                  id="messageBody"
-                  rows={6}
-                  placeholder="Tell us about your project or inquiry..."
-                  value={messageForm.body}
-                  onChange={(event) => setMessageForm((prev) => ({ ...prev, body: event.target.value }))}
-                  required
-                />
-              </div>
-              <Button type="submit" className="w-auto" size="lg" disabled={sending}>
-                {sending ? 'Sending...' : 'Send Message'}
+                <div>
+                  <Label htmlFor="subject">Subject</Label>
+                  <Input
+                    id="subject"
+                    placeholder="What is this regarding?"
+                    value={messageForm.subject}
+                    onChange={(event) => setMessageForm((prev) => ({ ...prev, subject: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="messageBody">Message *</Label>
+                  <Textarea
+                    id="messageBody"
+                    rows={6}
+                    placeholder="Tell us about your project or inquiry..."
+                    value={messageForm.body}
+                    onChange={(event) => setMessageForm((prev) => ({ ...prev, body: event.target.value }))}
+                    required
+                  />
+                </div>
+                <Button type="submit" className="w-auto" size="lg" disabled={sending}>
+                  {sending ? 'Sending...' : 'Send Message'}
+                </Button>
+              </form>
+            ) : (
+              <Button type="button" variant="outline" onClick={() => setShowMessageForm(true)}>
+                Show form
               </Button>
-            </form>
-
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                <MessageSquare size={16} />
-                Recent Messages
-              </h3>
-              {messages.length === 0 ? (
-                <p className="text-sm text-muted-foreground">You have not sent any messages yet.</p>
-              ) : (
-                <div className="space-y-3">
-                  {messages.map((msg) => (
-                    <div key={msg.id} className="p-3 border border-border rounded-lg">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h4 className="text-sm font-medium text-foreground">
-                            {msg.subject || 'General Inquiry'}
-                          </h4>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(msg.created_at).toLocaleString()}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="text-xs uppercase">
-                          {msg.status}
-                        </Badge>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-2 line-clamp-3">
-                        {msg.message}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </CardContent>
         </Card>
       </div>

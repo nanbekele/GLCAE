@@ -290,7 +290,21 @@ export const updateConsultancyRequestAssignmentAndSchedule = async (
 export const updateConsultancyRequestStatus = async (
   id: string,
   status: ConsultancyRequestRow["status"],
+  token?: string | null,
 ): Promise<ConsultancyRequestRow> => {
+  if (token) {
+    try {
+      const response = await callFunction<{ request?: ConsultancyRequestRow; error?: string }>(
+        "marketing-manage",
+        { action: "employee-update-consultancy-status", id, status },
+        { token, useAnonAuth: false },
+      );
+      if (response?.request) return response.request;
+      if (response?.error) throw new Error(response.error);
+    } catch (_err) {
+      throw _err;
+    }
+  }
   const { data, error } = await supabase
     .from("consultancyrequest")
     .update({ status })
@@ -727,7 +741,29 @@ export type InterviewScheduleLog = {
   location: string;
   notes: string | null;
   organized_by: string | null;
+  status?: string | null;
   created_at: string;
+};
+
+export const updateInterviewScheduleStatus = async (
+  id: string,
+  status: string,
+  token?: string | null,
+): Promise<InterviewScheduleLog> => {
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+  const response = await callFunction<{ schedule?: InterviewScheduleLog; error?: string }>(
+    "marketing-manage",
+    { action: "employee-update-interview-schedule-status", id, status },
+    { token, useAnonAuth: false },
+  );
+
+  if (!response?.schedule) {
+    throw new Error(response?.error ?? "Failed to update interview schedule status");
+  }
+
+  return response.schedule;
 };
 
 export const fetchInterviewSchedulesForEmployee = async (
@@ -759,6 +795,27 @@ export const fetchInterviewSchedulesForEmployee = async (
     .limit(limit);
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as InterviewScheduleLog[];
+};
+
+export const fetchInterviewSchedulesForHr = async (
+  limit = 100,
+  token?: string | null,
+  status?: string,
+): Promise<InterviewScheduleLog[]> => {
+  if (!token) {
+    throw new Error("Unauthorized");
+  }
+  const response = await callFunction<{ schedules?: InterviewScheduleLog[]; error?: string }>(
+    "marketing-manage",
+    { action: "hr-list-interview-schedules", limit, status },
+    { token, useAnonAuth: false },
+  );
+
+  if (response?.error) {
+    throw new Error(response.error);
+  }
+
+  return (response?.schedules ?? []) as InterviewScheduleLog[];
 };
 
 export const fetchInterviewSchedulesForClient = async (

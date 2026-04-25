@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Mail, Phone, MapPin, Printer, Clock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 
 const Contact = () => {
   const { toast } = useToast();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '',
@@ -21,6 +21,23 @@ const Contact = () => {
     subject: '',
     message: ''
   });
+
+  useEffect(() => {
+    if (!isAuthenticated || !profile) return;
+
+    const fullName = (profile.full_name ?? '').trim();
+    const nameParts = fullName ? fullName.split(/\s+/) : [];
+    const derivedFirstName = nameParts[0] ?? '';
+    const derivedLastName = nameParts.slice(1).join(' ');
+
+    setFormData((prev) => ({
+      ...prev,
+      firstName: prev.firstName || derivedFirstName,
+      lastName: prev.lastName || derivedLastName,
+      email: prev.email || (profile.email ?? ''),
+      phone: prev.phone || (profile.phone ?? ''),
+    }));
+  }, [isAuthenticated, profile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

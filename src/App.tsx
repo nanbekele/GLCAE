@@ -22,6 +22,7 @@ import HRDashboard from "./pages/portal/HRDashboard";
 import MarketingDashboard from "./pages/portal/MarketingDashboard";
 import EmployeeDashboard from "./pages/portal/EmployeeDashboard";
 import EmployeeTasks from "./pages/portal/EmployeeTasks";
+import EmployeeDoneTasks from "./pages/portal/EmployeeDoneTasks";
 import EmployeeSchedule from "./pages/portal/EmployeeSchedule";
 import EmployeePrepareReport from "./pages/portal/EmployeePrepareReport";
 import HeadReviewReports from "./pages/portal/HeadReviewReports";
@@ -53,6 +54,14 @@ import JobDetail from "./pages/JobDetail";
 import MarketingProjects from "./pages/portal/MarketingProjects";
 import MarketingSocialMedia from "./pages/portal/MarketingSocialMedia";
 import HRPortalRequests from "./pages/portal/HRPortalRequests";
+import HRVerifiedTasks from "./pages/portal/HRVerifiedTasks";
+import HRDeliveryScheduling from "./pages/portal/HRDeliveryScheduling";
+import HRSupportChat from "./pages/portal/HRSupportChat";
+import HRPostJob from "./pages/portal/HRPostJob";
+import HRJobPosts from "./pages/portal/HRJobPosts";
+import HRScheduleInterview from "./pages/portal/HRScheduleInterview";
+import HRUserManagement from "./pages/portal/HRUserManagement";
+import HRGenerateReport from "./pages/portal/HRGenerateReport";
 import ICTConsultancy from "./pages/portal/consultancy/ICTConsultancy";
 import MechanicalConsultancy from "./pages/portal/consultancy/MechanicalConsultancy";
 import MaterialTestingConsultancy from "./pages/portal/consultancy/MaterialTestingConsultancy";
@@ -159,6 +168,11 @@ const App = () => (
             <Route path="/portal/employee/tasks" element={
               <ProtectedRoute requiredRoles="employee">
                 <EmployeeTasks />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/employee/done-tasks" element={
+              <ProtectedRoute requiredRoles="employee">
+                <EmployeeDoneTasks />
               </ProtectedRoute>
             } />
             <Route path="/portal/employee/schedule" element={
@@ -268,6 +282,46 @@ const App = () => (
             <Route path="/portal/hr/portal-requests" element={
               <ProtectedRoute requiredRoles="hr_staff">
                 <HRPortalRequests />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/verified-tasks" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRVerifiedTasks />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/verified-tasks/:taskId/delivery-scheduling" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRDeliveryScheduling />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/support-chat" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRSupportChat />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/post-job" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRPostJob />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/job-posts" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRJobPosts />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/schedule-interview" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRScheduleInterview />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/user-management" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRUserManagement />
+              </ProtectedRoute>
+            } />
+            <Route path="/portal/hr/generate-report" element={
+              <ProtectedRoute requiredRoles="hr_staff">
+                <HRGenerateReport />
               </ProtectedRoute>
             } />
             <Route path="/portal/admin/users" element={

@@ -10,6 +10,7 @@ import { Camera, Upload, Trash2, Star } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { callFunction } from '@/lib/api';
+import { supabase } from '@/integrations/supabase/client';
 
 interface GalleryImage {
   id: string;
@@ -50,7 +51,16 @@ const GalleryManagement = () => {
         action: 'list-gallery-images',
       }, { token });
 
-      setImages(response.images ?? []);
+      const mapped = (response.images ?? []).map((item) => {
+        const raw = item.image_url;
+        if (raw && !raw.includes('://')) {
+          const { data } = supabase.storage.from('news-media').getPublicUrl(raw);
+          return { ...item, image_url: data?.publicUrl ?? raw };
+        }
+        return item;
+      });
+
+      setImages(mapped);
     } catch (error: any) {
       console.error('Error fetching gallery images:', error);
       toast({
@@ -70,6 +80,12 @@ const GalleryManagement = () => {
       reader.onerror = () => reject(new Error('Failed to read file'));
       reader.readAsDataURL(file);
     });
+  };
+
+  const isVideoUrl = (value: string | null | undefined) => {
+    if (!value) return false;
+    if (value.startsWith('data:video/')) return true;
+    return /\.(mp4|webm|ogg)(\?|#|$)/i.test(value);
   };
 
   const handleImageUpload = async (e: React.FormEvent) => {
@@ -229,11 +245,11 @@ const GalleryManagement = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="image">Image File *</Label>
+                    <Label htmlFor="image">Media File *</Label>
                     <Input
                       id="image"
                       type="file"
-                      accept="image/*"
+                      accept="image/*,video/*"
                       onChange={(e) => setFormData(prev => ({ ...prev, imageFile: e.target.files?.[0] || null }))}
                       required
                     />
@@ -271,11 +287,21 @@ const GalleryManagement = () => {
                     {images.map((image) => (
                       <div key={image.id} className="group relative bg-card rounded-lg overflow-hidden border border-border">
                         <div className="aspect-square overflow-hidden">
-                          <img
-                            src={image.image_url}
-                            alt={image.title}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
+                          {isVideoUrl(image.image_url) ? (
+                            <video
+                              src={image.image_url}
+                              controls
+                              playsInline
+                              preload="metadata"
+                              className="w-full h-full object-cover bg-black"
+                            />
+                          ) : (
+                            <img
+                              src={image.image_url}
+                              alt={image.title}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          )}
                         </div>
                         <div className="p-3">
                           <div className="flex items-center justify-between mb-1">

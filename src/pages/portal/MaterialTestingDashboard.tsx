@@ -35,7 +35,7 @@ const MaterialTestingDashboard = () => {
     { title: 'Consultancy Requested', value: String(statsData.consultancyRequested), icon: Settings, color: 'text-primary' },
     { title: 'Submitted Tasks', value: String(statsData.submittedTasks), icon: ClipboardCheck, color: 'text-success' },
     { title: 'In Progress Tickets', value: String(statsData.inProgressTickets), icon: BarChart3, color: 'text-accent' },
-    { title: 'Active Tickets', value: String(statsData.activeTickets), icon: AlertTriangle, color: 'text-accent' },
+    { title: 'Tasks', value: String(statsData.activeTickets), icon: AlertTriangle, color: 'text-accent' },
   ];
 
   useEffect(() => {
@@ -57,13 +57,20 @@ const MaterialTestingDashboard = () => {
           .eq('service_type', dept)
           .eq('status', 'in_progress');
 
-        const { count: pending } = await supabase
+        const { count: openTickets } = await supabase
           .from('service_requests')
           .select('id', { count: 'exact', head: true })
           .eq('service_type', dept)
-          .eq('status', 'pending');
+          .not('title', 'ilike', 'Report:%')
+          .not('status', 'in', '(completed,resolved,verified)');
 
-        const activeTickets = (pending ?? 0) + (inProgress ?? 0);
+        const { count: openConsultancy } = await supabase
+          .from('consultancyrequest')
+          .select('id', { count: 'exact', head: true })
+          .eq('department', dept)
+          .not('status', 'in', '(completed,cancelled)');
+
+        const activeTickets = (openTickets ?? 0) + (openConsultancy ?? 0);
 
         // Submitted tasks (reports) assigned to department head
         let submittedTasks = 0;
@@ -114,8 +121,9 @@ const MaterialTestingDashboard = () => {
         .from('service_requests')
         .select('id, title, status, priority, created_at')
         .eq('service_type', 'Material Testing')
+        .eq('status', 'in_progress')
         .order('created_at', { ascending: false })
-        .limit(8);
+        .limit(2);
       if (!error) {
         setTestRequests((data ?? []).map((r: any) => ({
           id: r.id,
@@ -277,47 +285,6 @@ const MaterialTestingDashboard = () => {
             </Button>
           </CardContent>
         </Card>
-        </div>
-
-        {/* Test Requests & Recent Certificates */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="shadow-card border-card-border">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <ClipboardCheck size={20} />
-                <span>Active Test Requests</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {testRequests.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No recent requests.</p>
-                ) : (
-                testRequests.map((request, index) => (
-                  <div key={request.id} className="p-4 border border-border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-foreground">{request.title}</h4>
-                      <span className={`text-sm font-medium ${getStatusColor(request.status)}`}>
-                        {request.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-xs px-2 py-1 rounded-full ${
-                        request.priority.toLowerCase() === 'high' || request.priority.toLowerCase() === 'urgent' ? 'bg-destructive/10 text-destructive' :
-                        request.priority.toLowerCase() === 'medium' ? 'bg-warning/10 text-warning' :
-                        'bg-info/10 text-info'
-                      }`}>
-                        {request.priority.toString().replace(/\b\w/g, (m) => m.toUpperCase())} Priority
-                      </span>
-                    </div>
-                  </div>
-                ))
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Recent Certificates removed per request */}
         </div>
       </div>
     </div>

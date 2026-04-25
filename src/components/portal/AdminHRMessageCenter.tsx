@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { Send } from "lucide-react";
 
 interface AdminHrMessage {
   id: string;
@@ -23,6 +24,7 @@ interface AdminHRMessageCenterProps {
   actorRole: "admin" | "hr";
   canReset?: boolean;
   className?: string;
+  embedded?: boolean;
 }
 
 const roleLabels: Record<"admin" | "hr", string> = {
@@ -30,7 +32,13 @@ const roleLabels: Record<"admin" | "hr", string> = {
   hr: "HR",
 };
 
-export const AdminHRMessageCenter = ({ token, actorRole, canReset = false, className }: AdminHRMessageCenterProps) => {
+export const AdminHRMessageCenter = ({
+  token,
+  actorRole,
+  canReset = false,
+  className,
+  embedded = false,
+}: AdminHRMessageCenterProps) => {
   const { toast } = useToast();
   const [messages, setMessages] = useState<AdminHrMessage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -179,68 +187,115 @@ export const AdminHRMessageCenter = ({ token, actorRole, canReset = false, class
     return () => window.clearInterval(interval);
   }, [loadMessages, token]);
 
-  return (
-    <Card className={cn("border-card-border shadow-card", className)}>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between text-lg">
-          <span>Admin ↔ HR Messages</span>
-          <span className="text-sm font-normal text-muted-foreground">You are chatting as {roleLabels[actorRole]}</span>
-        </CardTitle>
-        <CardDescription>Collaborate with the HR team in real time.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="h-64 rounded-lg border border-border bg-muted/30">
-          <ScrollArea className="h-64 p-3">
-            {loading && messages.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Loading messages…</p>
-            ) : sortedMessages.length > 0 ? (
-              <div className="space-y-3">
-                {sortedMessages.map((message) => {
-                  const isSelf = message.sender_role === actorRole;
-                  return (
-                    <div key={message.id} className={`flex ${isSelf ? "justify-end" : "justify-start"}`}>
-                      <div
-                        className={`max-w-[80%] rounded-lg px-4 py-2 text-sm shadow-sm ${
-                          isSelf ? "bg-primary text-primary-foreground" : "bg-background border"
-                        }`}
-                      >
-                        <div className="mb-1 text-xs font-semibold uppercase tracking-wide opacity-80">
-                          {roleLabels[message.sender_role]}
+  const content = (
+    <div className={cn("space-y-4", className)}>
+      <div className="rounded-xl border bg-muted/20">
+        <ScrollArea className="h-[340px] px-4 py-3">
+          {loading && messages.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Loading messages…</p>
+          ) : sortedMessages.length > 0 ? (
+            <div className="space-y-4">
+              {sortedMessages.map((message) => {
+                const isSelf = message.sender_role === actorRole;
+                return (
+                  <div key={message.id} className={cn("flex", isSelf ? "justify-end" : "justify-start")}>
+                    <div className={cn("max-w-[85%]", isSelf ? "text-right" : "text-left")}>
+                      <div className={cn("flex items-end gap-2", isSelf ? "justify-end" : "justify-start")}>
+                        {!isSelf ? (
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
+                            {roleLabels[message.sender_role].slice(0, 1)}
+                          </div>
+                        ) : null}
+
+                        <div
+                          className={cn(
+                            "rounded-2xl px-4 py-2 text-sm shadow-sm",
+                            isSelf
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-background text-foreground border",
+                          )}
+                        >
+                          <div className={cn("mb-1 flex items-center gap-2", isSelf ? "justify-end" : "justify-start")}>
+                            <span className={cn(
+                              "text-[11px] font-semibold uppercase tracking-wide",
+                              isSelf ? "text-primary-foreground/80" : "text-muted-foreground",
+                            )}>
+                              {roleLabels[message.sender_role]}
+                            </span>
+                          </div>
+                          <div className="whitespace-pre-line break-words leading-relaxed">{message.message}</div>
+                          <div className={cn(
+                            "mt-1 text-[11px]",
+                            isSelf ? "text-primary-foreground/70" : "text-muted-foreground",
+                          )}>
+                            {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
+                          </div>
                         </div>
-                        <div className="whitespace-pre-line break-words">{message.message}</div>
-                        <div className="mt-1 text-[10px] opacity-70">
-                          {formatDistanceToNow(new Date(message.created_at), { addSuffix: true })}
-                        </div>
+
+                        {isSelf ? (
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {roleLabels[message.sender_role].slice(0, 1)}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex h-full items-center justify-center">
               <p className="text-sm text-muted-foreground">No messages yet. Start the conversation below.</p>
-            )}
-          </ScrollArea>
-        </div>
-        <form onSubmit={handleSend} className="space-y-2">
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+
+      <form onSubmit={handleSend} className="space-y-2">
+        <div className="rounded-xl border bg-background p-3">
           <Textarea
             value={messageInput}
             onChange={(event) => setMessageInput(event.target.value)}
-            placeholder="Share an update with the team…"
-            rows={3}
+            placeholder="Write a message…"
+            rows={5}
             disabled={!token || sending}
+            className="min-h-[132px] resize-none border-0 p-0 focus-visible:ring-0"
           />
-          <div className="flex items-center justify-between gap-2">
-            <Button type="submit" disabled={sending || !token}>
-              {sending ? "Sending…" : "Send Message"}
-            </Button>
-            {canReset ? (
-              <Button type="button" variant="destructive" onClick={handleReset} disabled={resetting || !token}>
-                {resetting ? "Clearing…" : "Reset History"}
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="text-xs text-muted-foreground">
+              You are chatting as {roleLabels[actorRole]}
+            </div>
+            <div className="flex items-center gap-2">
+              {canReset ? (
+                <Button type="button" variant="destructive" onClick={handleReset} disabled={resetting || !token}>
+                  {resetting ? "Clearing…" : "Reset History"}
+                </Button>
+              ) : null}
+              <Button type="submit" disabled={sending || !token}>
+                <Send className="mr-2 h-4 w-4" />
+                {sending ? "Sending…" : "Send"}
               </Button>
-            ) : null}
+            </div>
           </div>
-        </form>
-      </CardContent>
+        </div>
+      </form>
+    </div>
+  );
+
+  if (embedded) {
+    return content;
+  }
+
+  return (
+    <Card className={cn("border-card-border shadow-card", className)}>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Admin ↔ HR Messages</span>
+          <span className="text-sm font-normal text-muted-foreground">Live</span>
+        </CardTitle>
+        <CardDescription>Secure internal updates between Admin and HR.</CardDescription>
+      </CardHeader>
+      <CardContent>{content}</CardContent>
     </Card>
   );
 };

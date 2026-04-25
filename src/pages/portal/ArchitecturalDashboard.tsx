@@ -37,7 +37,7 @@ const ArchitecturalDashboard = () => {
     { title: 'Consultancy Requested', value: String(statsData.consultancyRequested), icon: Settings, color: 'text-primary' },
     { title: 'Submitted Tasks', value: String(statsData.submittedTasks), icon: ClipboardCheck, color: 'text-success' },
     { title: 'In Progress Tickets', value: String(statsData.inProgressTickets), icon: FileText, color: 'text-accent' },
-    { title: 'Active Tickets', value: String(statsData.activeTickets), icon: AlertCircle, color: 'text-accent' },
+    { title: 'Tasks', value: String(statsData.activeTickets), icon: AlertCircle, color: 'text-accent' },
   ];
 
   useEffect(() => {
@@ -59,13 +59,20 @@ const ArchitecturalDashboard = () => {
           .eq('service_type', dept)
           .eq('status', 'in_progress');
 
-        const { count: pending } = await supabase
+        const { count: openTickets } = await supabase
           .from('service_requests')
           .select('id', { count: 'exact', head: true })
           .eq('service_type', dept)
-          .eq('status', 'pending');
+          .not('title', 'ilike', 'Report:%')
+          .not('status', 'in', '(completed,resolved,verified)');
 
-        const activeTickets = (pending ?? 0) + (inProgress ?? 0);
+        const { count: openConsultancy } = await supabase
+          .from('consultancyrequest')
+          .select('id', { count: 'exact', head: true })
+          .eq('department', dept)
+          .not('status', 'in', '(completed,cancelled)');
+
+        const activeTickets = (openTickets ?? 0) + (openConsultancy ?? 0);
 
         // Submitted tasks (reports) assigned to department head
         let submittedTasks = 0;
@@ -134,7 +141,7 @@ const ArchitecturalDashboard = () => {
           .from('projects')
           .select('id, title, status, start_date, end_date, updated_at')
           .order('updated_at', { ascending: false })
-          .limit(4);
+          .limit(2);
         if (dept?.id) {
           projectsQuery = projectsQuery.eq('department_id', dept.id);
         }
@@ -308,60 +315,6 @@ const ArchitecturalDashboard = () => {
             </Button>
           </CardContent>
         </Card>
-        </div>
-
-        {/* Current Projects & Recent Activities */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="shadow-card border-card-border">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Building2 size={20} />
-                <span>Current Projects</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {currentProjects.map((project, index) => (
-                  <div key={index} className="p-4 border border-border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-foreground">{project.name}</h4>
-                      <span className="text-sm text-muted-foreground">{project.progress}%</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-2">{project.phase}</p>
-                    <div className="w-full bg-secondary rounded-full h-2 mb-2">
-                      <div 
-                        className="bg-primary h-2 rounded-full transition-all duration-300" 
-                        style={{ width: `${project.progress}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-muted-foreground">Deadline: {project.deadline ?? '—'}</p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-card border-card-border">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Calendar size={20} />
-                <span>Recent Activities</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivities.map((activity, index) => (
-                  <div key={index} className="flex items-start space-x-3 py-2 border-b border-border last:border-0">
-                    <div className="w-2 h-2 bg-primary rounded-full mt-2"></div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">{activity.activity}</p>
-                      <p className="text-xs text-muted-foreground">{activity.time}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>

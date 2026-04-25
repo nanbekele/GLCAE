@@ -534,9 +534,21 @@ const MaterialTestingServiceTickets = () => {
                             >
                               <SelectTrigger className="h-8 w-56"><SelectValue placeholder="Select employee" /></SelectTrigger>
                               <SelectContent>
-                                {employees.map((e) => (
-                                  <SelectItem key={e.id} value={e.id}>{e.fullName} — {e.email}</SelectItem>
-                                ))}
+                                {employeesLoading ? (
+                                  <SelectItem value="__loading" disabled>
+                                    Loading employees...
+                                  </SelectItem>
+                                ) : employees.length === 0 ? (
+                                  <SelectItem value="__empty" disabled>
+                                    No employees found for this department
+                                  </SelectItem>
+                                ) : (
+                                  employees.map((e) => (
+                                    <SelectItem key={e.id} value={e.id}>
+                                      {e.fullName} — {e.email}
+                                    </SelectItem>
+                                  ))
+                                )}
                               </SelectContent>
                             </Select>
                             <Button
@@ -604,9 +616,21 @@ const MaterialTestingServiceTickets = () => {
                     <Select value={drawerPrimary ?? undefined} onValueChange={(v) => setDrawerPrimary(v)}>
                       <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
                       <SelectContent>
-                        {employees.map((e) => (
-                          <SelectItem key={e.id} value={e.id}>{e.fullName} — {e.email}</SelectItem>
-                        ))}
+                        {employeesLoading ? (
+                          <SelectItem value="__loading" disabled>
+                            Loading employees...
+                          </SelectItem>
+                        ) : employees.length === 0 ? (
+                          <SelectItem value="__empty" disabled>
+                            No employees found for this department
+                          </SelectItem>
+                        ) : (
+                          employees.map((e) => (
+                            <SelectItem key={e.id} value={e.id}>
+                              {e.fullName} — {e.email}
+                            </SelectItem>
+                          ))
+                        )}
                       </SelectContent>
                     </Select>
                   </div>

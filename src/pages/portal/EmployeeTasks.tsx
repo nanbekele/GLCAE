@@ -2,21 +2,27 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, ArrowLeft, RefreshCcw } from "lucide-react";
 import type { ServiceRequestRow } from "@/lib/portalRequests";
-import { fetchServiceRequestsAssignedTo } from "@/lib/portalRequests";
+import { fetchServiceRequestsAssignedTo, updateServiceRequestPriority, updateServiceRequestStatus } from "@/lib/portalRequests";
 import { supabase } from "@/integrations/supabase/client";
 
 const EmployeeTasks = () => {
   const { profile } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<ServiceRequestRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [updatingPriorityId, setUpdatingPriorityId] = useState<string | null>(null);
 
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "";
   const DEFAULT_SERVICE_REQUEST_BUCKET = "service-request-files";
@@ -143,6 +149,32 @@ const EmployeeTasks = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
+  const handleUpdateStatus = async (req: ServiceRequestRow, status: string) => {
+    setUpdatingStatusId(req.id);
+    try {
+      const updated = await updateServiceRequestStatus(req.id, status);
+      setTasks((prev) => prev.map((r) => (r.id === req.id ? { ...r, status: updated.status } : r)));
+      toast({ title: "Status updated" });
+    } catch (err: any) {
+      toast({ title: "Failed to update status", description: err?.message ?? "Please try again.", variant: "destructive" });
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
+
+  const handleUpdatePriority = async (req: ServiceRequestRow, priority: string) => {
+    setUpdatingPriorityId(req.id);
+    try {
+      const updated = await updateServiceRequestPriority(req.id, priority);
+      setTasks((prev) => prev.map((r) => (r.id === req.id ? { ...r, priority: updated.priority } : r)));
+      toast({ title: "Priority updated" });
+    } catch (err: any) {
+      toast({ title: "Failed to update priority", description: err?.message ?? "Please try again.", variant: "destructive" });
+    } finally {
+      setUpdatingPriorityId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-muted/30 p-6">
       <div className="max-w-5xl mx-auto">
@@ -194,6 +226,45 @@ const EmployeeTasks = () => {
                   {task.description ? (
                     <p className="text-sm text-muted-foreground mb-3">{task.description}</p>
                   ) : null}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                    <div className="grid gap-1">
+                      <Label>Status</Label>
+                      <Select
+                        value={(task.status ?? "pending").toLowerCase()}
+                        onValueChange={(v) => void handleUpdateStatus(task, v)}
+                        disabled={updatingStatusId === task.id}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="resolved">Resolved</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-1">
+                      <Label>Priority</Label>
+                      <Select
+                        value={(task.priority ?? "").toLowerCase() || "medium"}
+                        onValueChange={(v) => void handleUpdatePriority(task, v)}
+                        disabled={updatingPriorityId === task.id}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Priority" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="low">Low</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
                   {Array.isArray(task.attachments) && task.attachments.length > 0 ? (
                     <div>
                       <p className="text-sm font-medium text-foreground">Attachments</p>

@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, ArrowLeft, Send } from "lucide-react";
 import type { ServiceRequestRow } from "@/lib/portalRequests";
-import { createClientServiceRequest, fetchDepartmentHeadId, fetchServiceRequestsAssignedTo, shareServiceRequestWithEmployees, uploadServiceRequestAttachments } from "@/lib/portalRequests";
+import { createClientServiceRequest, fetchDepartmentHeadId, fetchServiceRequestsAssignedTo, shareServiceRequestWithEmployees, updateServiceRequestStatus, uploadServiceRequestAttachments } from "@/lib/portalRequests";
 
 const EmployeePrepareReport = () => {
   const { profile, token } = useAuth();
@@ -45,7 +45,20 @@ const EmployeePrepareReport = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
-  const selectedTask = useMemo(() => tasks.find((t) => t.id === selectedTaskId) ?? null, [tasks, selectedTaskId]);
+  const selectableTasks = useMemo(() => {
+    const isCompleted = (value: string | null | undefined) => {
+      const status = (value ?? "").toLowerCase();
+      return ["completed", "resolved", "verified"].includes(status);
+    };
+    return tasks
+      .filter((t) => !(t.title ?? "").toLowerCase().startsWith("report:"))
+      .filter((t) => !isCompleted(t.status));
+  }, [tasks]);
+
+  const selectedTask = useMemo(
+    () => selectableTasks.find((t) => t.id === selectedTaskId) ?? null,
+    [selectableTasks, selectedTaskId]
+  );
 
   const departmentLabel = useMemo(() => {
     const byTask = selectedTask?.service_type ?? null;
@@ -69,13 +82,24 @@ const EmployeePrepareReport = () => {
       return;
     }
 
+    if (files.length === 0) {
+      toast({
+        title: "Attachments required",
+        description: "Please attach at least one file before submitting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const title = `Report: ${selectedTask.title}`;
-      const description = `${summary.trim()}\n\nDetails:\n${details.trim()}`.trim();
+      const description = [`Original Task ID: ${selectedTask.id}`, summary.trim(), "", "Details:", details.trim()]
+        .filter((part) => part !== "")
+        .join("\n")
+        .trim();
 
-      // Prepare attachments (optional)
-      const preparedAttachments = files.length > 0 ? await uploadServiceRequestAttachments(files) : null;
+      const preparedAttachments = await uploadServiceRequestAttachments(files);
 
       // Create as a service request (re-using existing API) and then assign to department head
       const created = await createClientServiceRequest({
@@ -96,6 +120,8 @@ const EmployeePrepareReport = () => {
       if (headId) {
         await shareServiceRequestWithEmployees(created.id, [headId]);
       }
+
+      await updateServiceRequestStatus(selectedTask.id, "completed");
 
       toast({ title: "Report submitted", description: "Your report has been sent to your department head." });
       navigate("/portal/employee");
@@ -131,9 +157,9 @@ const EmployeePrepareReport = () => {
               <Select value={selectedTaskId ?? undefined} onValueChange={(v) => setSelectedTaskId(v)}>
                 <SelectTrigger><SelectValue placeholder={loading ? "Loading tasks..." : "Select a task"}/></SelectTrigger>
                 <SelectContent>
-                  {tasks.length === 0 ? (
+                  {selectableTasks.length === 0 ? (
                     <SelectItem value="__none" disabled>{loading ? "Loading tasks..." : "No tasks assigned"}</SelectItem>
-                  ) : tasks.map((t) => (
+                  ) : selectableTasks.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>
                   ))}
                 </SelectContent>
@@ -148,7 +174,7 @@ const EmployeePrepareReport = () => {
               <Textarea value={details} onChange={(e) => setDetails(e.target.value)} placeholder="Describe progress, blockers, and next steps" rows={6}/>
             </div>
             <div className="grid gap-2">
-              <Label>Attachments (optional)</Label>
+              <Label>Attachments (required)</Label>
               <Input type="file" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
             </div>
             <div className="flex items-center justify-end">

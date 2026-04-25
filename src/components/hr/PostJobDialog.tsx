@@ -33,12 +33,46 @@ interface PostJobDialogProps {
   onJobCreated?: () => void;
 }
 
+interface PostJobFormProps {
+  enabled: boolean;
+  onJobCreated?: () => void;
+  onClose?: () => void;
+}
+
 const JOB_TYPES = ['Full-time', 'Part-time', 'Contract', 'Internship'];
 
 export const PostJobDialog = ({ onJobCreated }: PostJobDialogProps) => {
+  const { profile } = useAuth();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button className="w-full justify-start" variant="outline" disabled={!profile || (profile.role !== 'hr_staff' && profile.role !== 'super_admin')}>
+          <Briefcase size={16} className="mr-2" />
+          Post New Job
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[650px]">
+        <DialogHeader>
+          <DialogTitle>Post a New Job</DialogTitle>
+          <DialogDescription>
+            Provide the job details below. Published roles will appear on the Careers page.
+          </DialogDescription>
+        </DialogHeader>
+        <PostJobForm
+          enabled={open}
+          onJobCreated={onJobCreated}
+          onClose={() => setOpen(false)}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+export const PostJobForm = ({ enabled, onJobCreated, onClose }: PostJobFormProps) => {
   const { toast } = useToast();
   const { profile, token } = useAuth();
-  const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [fetchingDepartments, setFetchingDepartments] = useState(false);
@@ -61,7 +95,7 @@ export const PostJobDialog = ({ onJobCreated }: PostJobDialogProps) => {
   }, [profile]);
 
   useEffect(() => {
-    if (!open || departments.length > 0 || fetchingDepartments) {
+    if (!enabled || departments.length > 0 || fetchingDepartments) {
       return;
     }
 
@@ -86,7 +120,7 @@ export const PostJobDialog = ({ onJobCreated }: PostJobDialogProps) => {
     };
 
     fetchDepartments();
-  }, [open, departments.length, fetchingDepartments, toast]);
+  }, [enabled, departments.length, fetchingDepartments, toast]);
 
   const handleChange = (field: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const value = event.target.value;
@@ -167,7 +201,7 @@ export const PostJobDialog = ({ onJobCreated }: PostJobDialogProps) => {
         responsibilities: '',
       });
 
-      setOpen(false);
+      onClose?.();
       onJobCreated?.();
     } catch (error: any) {
       console.error('[PostJobDialog] Failed to post job', error);
@@ -182,21 +216,7 @@ export const PostJobDialog = ({ onJobCreated }: PostJobDialogProps) => {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="w-full justify-start" variant="outline" disabled={!canManageJobs}>
-          {loading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <Briefcase size={16} className="mr-2" />}
-          Post New Job
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[650px]">
-        <DialogHeader>
-          <DialogTitle>Post a New Job</DialogTitle>
-          <DialogDescription>
-            Provide the job details below. Published roles will appear on the Careers page.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label htmlFor="job-title">Job Title *</Label>
@@ -322,7 +342,7 @@ export const PostJobDialog = ({ onJobCreated }: PostJobDialogProps) => {
           </div>
 
           <div className="flex justify-end gap-3">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
             <Button type="submit" disabled={loading || !canManageJobs}>
@@ -331,9 +351,5 @@ export const PostJobDialog = ({ onJobCreated }: PostJobDialogProps) => {
             </Button>
           </div>
         </form>
-      </DialogContent>
-    </Dialog>
   );
 };
-
-export default PostJobDialog;

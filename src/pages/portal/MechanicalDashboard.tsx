@@ -112,13 +112,20 @@ const useMechanicalStats = () => {
           .eq("service_type", dept)
           .eq("status", "in_progress");
 
-        const { count: pending } = await supabase
+        const { count: openTickets } = await supabase
           .from("service_requests")
           .select("id", { count: "exact", head: true })
           .eq("service_type", dept)
-          .eq("status", "pending");
+          .not("title", "ilike", "Report:%")
+          .not("status", "in", "(completed,resolved,verified)");
 
-        const activeTickets = (pending ?? 0) + (inProgress ?? 0);
+        const { count: openConsultancy } = await supabase
+          .from("consultancyrequest")
+          .select("id", { count: "exact", head: true })
+          .eq("department", dept)
+          .not("status", "in", "(completed,cancelled)");
+
+        const activeTickets = (openTickets ?? 0) + (openConsultancy ?? 0);
 
         let submittedTasks = 0;
         try {
@@ -299,7 +306,7 @@ const ElectroMechanicalDashboard = () => {
     { title: "Consultancy Requested", value: String(statsData.consultancyRequested), icon: Settings, color: "text-primary" },
     { title: "Submitted Tasks", value: String(statsData.submittedTasks), icon: ClipboardCheck, color: "text-success" },
     { title: "In Progress Tickets", value: String(statsData.inProgressTickets), icon: Activity, color: "text-accent" },
-    { title: "Active Tickets", value: String(statsData.activeTickets), icon: AlertTriangle, color: "text-accent" },
+    { title: "Tasks", value: String(statsData.activeTickets), icon: AlertTriangle, color: "text-accent" },
   ];
 
   return (
@@ -431,68 +438,6 @@ const ElectroMechanicalDashboard = () => {
             </Card>
           </div>
         </section>
-
-        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {projects.length > 0 ? (
-          <Card className="border-card-border shadow-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Wrench size={20} />
-                <span>Integrated Projects</span>
-              </CardTitle>
-              <CardDescription>Track electro-mechanical project delivery milestones.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {projects.map((project) => (
-                <div key={project.name} className="rounded-lg border border-border/60 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">{project.name}</h3>
-                      <p className="text-sm text-muted-foreground">{project.system}</p>
-                    </div>
-                    <span className="text-sm font-medium text-primary">{project.status}</span>
-                  </div>
-                  <div className="mt-3">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Progress</span>
-                      <span>{project.progress}%</span>
-                    </div>
-                    <div className="mt-2 h-2 rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-gradient-primary" style={{ width: `${project.progress}%` }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-          ) : null}
-
-          {alerts.length > 0 ? (
-          <Card className="border-card-border shadow-card">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle size={20} />
-                System Alerts
-              </CardTitle>
-              <CardDescription>Critical notifications across power and mechanical systems.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {alerts.map((alert, idx) => (
-                <div key={`${alert.system}-${idx}`} className="rounded-lg border border-border/60 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-foreground">{alert.system}</h3>
-                      <p className="text-sm text-muted-foreground">{alert.issue}</p>
-                    </div>
-                    <span className={`text-sm font-medium ${getPriorityColor(alert.priority)}`}>{alert.priority}</span>
-                  </div>
-                  <p className="mt-2 text-xs text-muted-foreground">Updated {alert.time}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-          ) : null}
-        </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {capacityMetrics.length > 0 ? (

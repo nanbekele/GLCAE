@@ -89,6 +89,7 @@ const ClientInterviewSchedules = () => {
                         </div>
                         <div className="flex gap-1">
                           <Badge variant="outline">Interview</Badge>
+                          <Badge variant="secondary">{(iv.status ?? 'waiting').toString()}</Badge>
                         </div>
                       </div>
                       {iv.notes ? <p className="mt-2 text-sm text-muted-foreground">{iv.notes}</p> : null}

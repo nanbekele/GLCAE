@@ -20,6 +20,13 @@ const Gallery = () => {
   const [selectedImage, setSelectedImage] = useState<GalleryImage | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const resolveMediaUrl = (path: string | null | undefined) => {
+    if (!path) return null;
+    if (path.includes('://')) return path;
+    const { data } = supabase.storage.from('news-media').getPublicUrl(path);
+    return data?.publicUrl ?? null;
+  };
+
   const fetchImages = async () => {
     try {
       const { data, error } = await supabase
@@ -28,8 +35,12 @@ const Gallery = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setImages(data || []);
-      setFilteredImages(data || []);
+      const mapped = (data || []).map((row) => ({
+        ...row,
+        image_url: resolveMediaUrl(row.image_url) ?? row.image_url,
+      }));
+      setImages(mapped);
+      setFilteredImages(mapped);
     } catch (error) {
       console.error('Error fetching gallery images:', error);
     } finally {
@@ -48,6 +59,12 @@ const Gallery = () => {
       setFilteredImages(images.filter(img => img.is_featured));
     }
   }, [filter, images]);
+
+  const isVideoUrl = (value: string | null | undefined) => {
+    if (!value) return false;
+    if (value.startsWith('data:video/')) return true;
+    return /\.(mp4|webm|ogg)(\?|#|$)/i.test(value);
+  };
 
   if (loading) {
     return (
@@ -123,11 +140,21 @@ const Gallery = () => {
                 >
                   <CardContent className="p-0 relative">
                     <div className="aspect-square overflow-hidden">
-                      <img
-                        src={image.image_url}
-                        alt={image.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
+                      {isVideoUrl(image.image_url) ? (
+                        <video
+                          src={image.image_url}
+                          controls
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-cover bg-black"
+                        />
+                      ) : (
+                        <img
+                          src={image.image_url}
+                          alt={image.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      )}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-300 flex items-center justify-center">
                         <ZoomIn className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300" size={32} />
                       </div>
@@ -163,11 +190,21 @@ const Gallery = () => {
         >
           <div className="max-w-4xl max-h-full bg-background rounded-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="aspect-video">
-              <img
-                src={selectedImage.image_url}
-                alt={selectedImage.title}
-                className="w-full h-full object-cover"
-              />
+              {isVideoUrl(selectedImage.image_url) ? (
+                <video
+                  src={selectedImage.image_url}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full h-full object-cover bg-black"
+                />
+              ) : (
+                <img
+                  src={selectedImage.image_url}
+                  alt={selectedImage.title}
+                  className="w-full h-full object-cover"
+                />
+              )}
             </div>
             <div className="p-6">
               <h2 className="text-2xl font-bold text-foreground mb-2">{selectedImage.title}</h2>

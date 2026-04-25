@@ -1,22 +1,63 @@
 import { Award, Calendar, Users, Building } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 const StatsSection = () => {
+  const yearsOfExcellence = useMemo(() => {
+    const start = new Date('2018-07-01T00:00:00Z');
+    const now = new Date();
+    const diffYears = Math.max(0, now.getUTCFullYear() - start.getUTCFullYear() - (now < new Date(Date.UTC(now.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())) ? 1 : 0));
+    const display = Math.max(1, diffYears);
+    return `${display}+`;
+  }, []);
+
+  const [projectsCompleted, setProjectsCompleted] = useState<string>('100+');
+  const [expertProfessionals, setExpertProfessionals] = useState<string>('50+');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCounts = async () => {
+      try {
+        const [{ count: projectsCount, error: projectsError }, { count: staffCount, error: staffError }] = await Promise.all([
+          supabase.from('projects').select('id', { count: 'exact', head: true }),
+          supabase.from('profiles').select('id', { count: 'exact', head: true }),
+        ]);
+
+        if (!cancelled && !projectsError && typeof projectsCount === 'number') {
+          setProjectsCompleted(`${projectsCount}+`);
+        }
+
+        if (!cancelled && !staffError && typeof staffCount === 'number') {
+          setExpertProfessionals(`${staffCount}+`);
+        }
+      } catch {
+        // Keep fallback values
+      }
+    };
+
+    loadCounts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const stats = [
     {
       icon: Calendar,
-      value: '6+',
+      value: yearsOfExcellence,
       label: 'Years of Excellence',
       description: 'Since July 2018'
     },
     {
       icon: Building,
-      value: '100+',
+      value: projectsCompleted,
       label: 'Projects Completed',
       description: 'Across all departments'
     },
     {
       icon: Users,
-      value: '50+',
+      value: expertProfessionals,
       label: 'Expert Professionals',
       description: 'Certified engineers & architects'
     },

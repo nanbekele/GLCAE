@@ -22,6 +22,9 @@ interface Application {
   status: string;
   created_at: string;
   job_id: string;
+  job?: {
+    title: string;
+  } | null;
 }
 
 const HRApplications = () => {
@@ -52,7 +55,7 @@ const HRApplications = () => {
     try {
       const { data, error } = await supabase
         .from('applications')
-        .select('*')
+        .select('*, job:jobs!applications_job_id_fkey(title)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -186,6 +189,9 @@ const HRApplications = () => {
                             {new Date(app.created_at).toLocaleDateString()}
                           </span>
                         </div>
+                        {app.job?.title ? (
+                          <p className="text-sm font-medium text-foreground mb-1">{app.job.title}</p>
+                        ) : null}
                         <p className="text-sm text-muted-foreground mb-2">{app.email}</p>
                         {selectedApp?.id === app.id && Array.isArray(app.notes) && app.notes[0] ? (
                           <p className="text-sm text-destructive mb-2 break-words">
@@ -217,6 +223,12 @@ const HRApplications = () => {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {selectedApp.job?.title ? (
+                    <div>
+                      <h4 className="font-semibold text-foreground mb-2">Job</h4>
+                      <p className="text-foreground">{selectedApp.job.title}</p>
+                    </div>
+                  ) : null}
                   <div>
                     <h4 className="font-semibold text-foreground mb-2">Applicant</h4>
                     <p className="text-foreground">{selectedApp.name}</p>

@@ -31,6 +31,23 @@ interface NewsPost {
 const FEATURED_PREVIEW_LIMIT = 220;
 const GRID_PREVIEW_LIMIT = 160;
 
+const getMediaKind = (value: string | null | undefined): 'image' | 'video' | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith('data:')) {
+    if (trimmed.startsWith('data:video/')) return 'video';
+    if (trimmed.startsWith('data:image/')) return 'image';
+    return null;
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (lower.match(/\.(mp4|webm|ogg|mov|m4v)(\?.*)?$/)) return 'video';
+  if (lower.match(/\.(png|jpe?g|gif|webp|bmp|svg)(\?.*)?$/)) return 'image';
+  return null;
+};
+
 const News = () => {
   const [posts, setPosts] = useState<NewsPost[]>([]);
   const [filteredPosts, setFilteredPosts] = useState<NewsPost[]>([]);
@@ -50,10 +67,19 @@ const News = () => {
   }, [posts, searchTerm, selectedTag]);
 
   const resolveCoverImageUrl = (path: string | null | undefined) => {
-    if (!path) return null;
-    if (path.includes('://')) return path;
+    const raw = typeof path === 'string' ? path.trim() : '';
+    if (!raw) return null;
+    if (raw.includes('://')) return raw;
 
-    const { data } = supabase.storage.from('news-media').getPublicUrl(path);
+    let objectPath = raw.replace(/^\/+/, '');
+    if (objectPath.startsWith('news-media/')) {
+      objectPath = objectPath.slice('news-media/'.length);
+    }
+    if (objectPath.startsWith('public/news-media/')) {
+      objectPath = objectPath.slice('public/news-media/'.length);
+    }
+
+    const { data } = supabase.storage.from('news-media').getPublicUrl(objectPath);
     return data?.publicUrl ?? null;
   };
 
@@ -231,12 +257,20 @@ const News = () => {
                   <div className="md:flex">
                     <div className="md:w-1/3">
                       {displayPosts[0].coverImageUrl ? (
-                        <img
-                          src={displayPosts[0].coverImageUrl}
-                          alt={displayPosts[0].title}
-                          className="h-40 md:h-56 w-full object-cover"
-                          loading="lazy"
-                        />
+                        getMediaKind(displayPosts[0].coverImageUrl) === 'video' ? (
+                          <video
+                            src={displayPosts[0].coverImageUrl}
+                            controls
+                            className="h-40 md:h-56 w-full object-cover bg-black"
+                          />
+                        ) : (
+                          <img
+                            src={displayPosts[0].coverImageUrl}
+                            alt={displayPosts[0].title}
+                            className="h-40 md:h-56 w-full object-cover"
+                            loading="lazy"
+                          />
+                        )
                       ) : (
                         <div className="h-40 md:h-56 bg-gradient-to-br from-primary to-accent flex flex-col items-center justify-center text-primary-foreground/80">
                           <ImageOff className="w-10 h-10 mb-2" />
@@ -300,12 +334,20 @@ const News = () => {
                     style={{ animationDelay: `${(index + 1) * 0.1}s` }}
                   >
                     {post.coverImageUrl ? (
-                      <img
-                        src={post.coverImageUrl}
-                        alt={post.title}
-                        className="h-32 w-full object-cover"
-                        loading="lazy"
-                      />
+                      getMediaKind(post.coverImageUrl) === 'video' ? (
+                        <video
+                          src={post.coverImageUrl}
+                          controls
+                          className="h-32 w-full object-cover bg-black"
+                        />
+                      ) : (
+                        <img
+                          src={post.coverImageUrl}
+                          alt={post.title}
+                          className="h-32 w-full object-cover"
+                          loading="lazy"
+                        />
+                      )
                     ) : (
                       <div className="h-32 w-full bg-muted flex flex-col items-center justify-center text-muted-foreground">
                         <ImageOff className="w-8 h-8 mb-2" />

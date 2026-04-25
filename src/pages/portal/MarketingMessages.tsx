@@ -94,9 +94,21 @@ const MarketingMessages = () => {
       });
     } catch (error: any) {
       console.error('Error sending reply:', error);
+
+      const code = String(error?.message ?? '');
+      const friendly: Record<string, string> = {
+        network_unreachable: 'Email service is not reachable from the server right now. Please try again later.',
+        email_sender_not_verified: 'Sender email/domain is not verified in the email service. If using Resend, verify RESEND_FROM_EMAIL/domain. If using Gmail, ensure the sender account is configured correctly.',
+        email_invalid_api_key: 'Email service credentials are invalid. Check Supabase function secrets (GMAIL_* or RESEND_*).',
+        email_unauthorized: 'Email service rejected the credentials (unauthorized). Check Supabase function secrets (GMAIL_* or RESEND_*).',
+        email_forbidden: 'Email service request forbidden. Check provider permissions (Gmail OAuth scopes or Resend sender/domain verification).',
+        email_rate_limited: 'Email service rate-limited the request. Please wait and try again.',
+        email_service_error: 'Email service error. Please check the function logs for details.',
+      };
+      const description = friendly[code] ?? (error.message || 'Please try again later.');
       toast({
         title: 'Failed to send reply',
-        description: error.message || 'Please try again later.',
+        description,
         variant: 'destructive',
       });
     } finally {

@@ -95,7 +95,7 @@ const ICTDashboard = () => {
     { title: 'Consultancy Requested', value: String(statsData.consultancyRequested), icon: Settings, color: 'text-primary' },
     { title: 'Submitted Tasks', value: String(statsData.submittedTasks), icon: ClipboardCheck, color: 'text-success' },
     { title: 'In Progress Tickets', value: String(statsData.inProgressTickets), icon: Network, color: 'text-accent' },
-    { title: 'Active Tickets', value: String(statsData.activeTickets), icon: Monitor, color: 'text-accent' },
+    { title: 'Tasks', value: String(statsData.activeTickets), icon: Monitor, color: 'text-accent' },
   ];
 
   const quickActions = [
@@ -157,13 +157,20 @@ const ICTDashboard = () => {
           .eq('service_type', 'ICT')
           .eq('status', 'in_progress');
 
-        const { count: pending } = await supabase
+        const { count: openTickets } = await supabase
           .from('service_requests')
           .select('id', { count: 'exact', head: true })
           .eq('service_type', 'ICT')
-          .eq('status', 'pending');
+          .not('title', 'ilike', 'Report:%')
+          .not('status', 'in', '(completed,resolved,verified)');
 
-        const activeTickets = (pending ?? 0) + (inProgress ?? 0);
+        const { count: openConsultancy } = await supabase
+          .from('consultancyrequest')
+          .select('id', { count: 'exact', head: true })
+          .eq('department', 'ICT')
+          .not('status', 'in', '(completed,cancelled)');
+
+        const activeTickets = (openTickets ?? 0) + (openConsultancy ?? 0);
 
         // Submitted tasks = service_requests assigned to ICT head with title like 'Report:%'
         let submittedTasks = 0;
@@ -193,7 +200,7 @@ const ICTDashboard = () => {
 
     const loadProjects = async () => {
       try {
-        const rows = await fetchConsultancyRequestsByDepartment('ICT', 4);
+        const rows = await fetchConsultancyRequestsByDepartment('ICT', 2);
         const mapProgress = (status: string) => {
           const s = (status ?? '').toLowerCase();
           if (s === 'completed') return 100;
@@ -214,8 +221,11 @@ const ICTDashboard = () => {
 
     const loadTickets = async () => {
       try {
-        const items = await fetchServiceRequestsByServiceType('ICT', 4);
-        const clientIds = Array.from(new Set(items.map(i => i.client_id).filter(Boolean))) as string[];
+        const items = await fetchServiceRequestsByServiceType('ICT', 10);
+        const previewItems = (items ?? [])
+          .filter((i) => (i.status ?? '').toLowerCase() === 'in_progress')
+          .slice(0, 2);
+        const clientIds = Array.from(new Set(previewItems.map(i => i.client_id).filter(Boolean))) as string[];
         let clientMap = new Map<string, string>();
         if (clientIds.length > 0) {
           const { data } = await supabase
@@ -224,7 +234,7 @@ const ICTDashboard = () => {
             .in('id', clientIds);
           (data ?? []).forEach((p: any) => clientMap.set(p.id, p.full_name));
         }
-        setTicketsPreview(items.map(i => ({
+        setTicketsPreview(previewItems.map(i => ({
           id: i.id,
           title: i.title ?? null,
           client: clientMap.get(i.client_id as string) ?? null,
@@ -381,77 +391,6 @@ const ICTDashboard = () => {
         </div>
 
         {/* ICT Projects & Service Tickets */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card className="shadow-card border-card-border">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Settings size={20} />
-                <span>Active ICT Projects</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {ictProjects.map((project, index) => (
-                  <div key={index} className="p-4 border border-border rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-foreground">{project.name}</h4>
-                      <span className="text-sm text-muted-foreground">{project.progress}%</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-1">Type: {project.type}</p>
-                    <p className="text-sm text-accent mb-2">{project.status}</p>
-                    <div className="w-full bg-secondary rounded-full h-2">
-                      <div 
-                        className="bg-primary h-2 rounded-full transition-all duration-300" 
-                        style={{ width: `${project.progress}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-card border-card-border">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Monitor size={20} />
-                <span>Service Tickets</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {ticketsPreview.map((ticket, index) => (
-                  <div key={index} className="p-3 border border-border rounded-lg">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h5 className="text-sm font-medium text-foreground">{ticket.title ?? ticket.id}</h5>
-                        {ticket.client ? (
-                          <p className="text-xs text-muted-foreground">{ticket.client}</p>
-                        ) : null}
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <span className={`text-xs font-medium ${ticket.priority ? getPriorityColor(ticket.priority) : 'text-muted-foreground'}`}>
-                          {ticket.priority ?? '#'}
-                        </span>
-                        <span className={`text-xs ${ticket.status ? getStatusColor(ticket.status) : 'text-muted-foreground'}`}>
-                          {ticket.status ?? '—'}
-                        </span>
-                      </div>
-                    </div>
-                    {ticket.title ? (
-                      <p className="text-sm text-muted-foreground">{ticket.title}</p>
-                    ) : null}
-                  </div>
-                ))}
-                <div className="pt-2">
-                  <Button variant="outline" size="sm" className="w-full" onClick={() => navigate('/portal/ict/service-tickets')}>
-                    View all service tickets
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );

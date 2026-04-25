@@ -45,6 +45,7 @@ interface ProjectFormState {
   featured: boolean;
   mediaType: MediaType;
   videoUrl: string;
+  videoSource: 'url' | 'file';
 }
 
 interface EditProjectState {
@@ -78,6 +79,8 @@ const MarketingProjects = () => {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string | null>(null);
+  const [videoDataUrl, setVideoDataUrl] = useState<string | null>(null);
 
   const initialForm = useMemo<ProjectFormState>(() => ({
     title: '',
@@ -86,6 +89,7 @@ const MarketingProjects = () => {
     featured: false,
     mediaType: 'image',
     videoUrl: '',
+    videoSource: 'url',
   }), []);
 
   const [form, setForm] = useState<ProjectFormState>(initialForm);
@@ -137,6 +141,8 @@ const MarketingProjects = () => {
     setForm(initialForm);
     setImagePreview(null);
     setImageDataUrl(null);
+    setVideoPreview(null);
+    setVideoDataUrl(null);
   };
 
   const handleImageChange = async (file: File | null) => {
@@ -154,6 +160,26 @@ const MarketingProjects = () => {
       toast({
         title: 'Image error',
         description: error.message || 'Failed to read project image.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleVideoChange = async (file: File | null) => {
+    if (!file) {
+      setVideoPreview(null);
+      setVideoDataUrl(null);
+      return;
+    }
+
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setVideoPreview(dataUrl);
+      setVideoDataUrl(dataUrl);
+    } catch (error: any) {
+      toast({
+        title: 'Video error',
+        description: error.message || 'Failed to read project video.',
         variant: 'destructive',
       });
     }
@@ -179,13 +205,35 @@ const MarketingProjects = () => {
       return;
     }
 
-    if (!imageDataUrl) {
-      toast({
-        title: 'Image required',
-        description: 'Provide a showcase image for the project.',
-        variant: 'destructive',
-      });
-      return;
+    if (form.mediaType === 'image') {
+      if (!imageDataUrl) {
+        toast({
+          title: 'Image required',
+          description: 'Provide a showcase image for the project.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    } else {
+      if (form.videoSource === 'file') {
+        if (!videoDataUrl) {
+          toast({
+            title: 'Video required',
+            description: 'Upload a video file for the project.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      } else {
+        if (!form.videoUrl.trim()) {
+          toast({
+            title: 'Video URL required',
+            description: 'Provide a video URL for the project.',
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
     }
 
     setSubmitting(true);
@@ -196,8 +244,13 @@ const MarketingProjects = () => {
         title: form.title.trim(),
         summary: form.summary.trim(),
         status: form.status,
-        mediaType: 'image',
-        mediaDataUrl: imageDataUrl,
+        mediaType: form.mediaType,
+        mediaDataUrl: form.mediaType === 'image'
+          ? imageDataUrl
+          : form.videoSource === 'file'
+            ? videoDataUrl
+            : undefined,
+        mediaUrl: form.mediaType === 'video' && form.videoSource === 'url' ? form.videoUrl.trim() : undefined,
         featured: form.featured,
       }, { token });
 
@@ -362,6 +415,26 @@ const MarketingProjects = () => {
               </div>
 
               <div>
+                <Label htmlFor="mediaType">Media Type</Label>
+                <select
+                  id="mediaType"
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  value={form.mediaType}
+                  onChange={(event) => {
+                    const nextType = (event.target.value as MediaType) === 'video' ? 'video' : 'image';
+                    setForm((prev) => ({ ...prev, mediaType: nextType }));
+                    setImagePreview(null);
+                    setImageDataUrl(null);
+                    setVideoPreview(null);
+                    setVideoDataUrl(null);
+                  }}
+                >
+                  <option value="image">Image</option>
+                  <option value="video">Video</option>
+                </select>
+              </div>
+
+              <div>
                 <Label htmlFor="summary">Summary</Label>
                 <Textarea
                   id="summary"
@@ -373,21 +446,74 @@ const MarketingProjects = () => {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="media">Showcase Image</Label>
-                <Input
-                  id="media"
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => handleImageChange(event.target.files?.[0] ?? null)}
-                  required
-                />
-                {imagePreview && (
-                  <div className="mt-3">
-                    <img src={imagePreview} alt="Preview" className="h-32 w-32 object-cover rounded-md border" />
+              {form.mediaType === 'image' ? (
+                <div>
+                  <Label htmlFor="media">Showcase Image</Label>
+                  <Input
+                    id="media"
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => handleImageChange(event.target.files?.[0] ?? null)}
+                    required
+                  />
+                  {imagePreview && (
+                    <div className="mt-3">
+                      <img src={imagePreview} alt="Preview" className="h-32 w-32 object-cover rounded-md border" />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="videoSource">Video Source</Label>
+                      <select
+                        id="videoSource"
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={form.videoSource}
+                        onChange={(event) => {
+                          const next = (event.target.value === 'file' ? 'file' : 'url') as ProjectFormState['videoSource'];
+                          setForm((prev) => ({ ...prev, videoSource: next }));
+                          setVideoPreview(null);
+                          setVideoDataUrl(null);
+                        }}
+                      >
+                        <option value="url">Paste link</option>
+                        <option value="file">Upload file</option>
+                      </select>
+                    </div>
+
+                    {form.videoSource === 'url' ? (
+                      <div>
+                        <Label htmlFor="videoUrl">Video URL</Label>
+                        <Input
+                          id="videoUrl"
+                          placeholder="https://..."
+                          value={form.videoUrl}
+                          onChange={(event) => setForm((prev) => ({ ...prev, videoUrl: event.target.value }))}
+                          required
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <Label htmlFor="videoFile">Video File</Label>
+                        <Input
+                          id="videoFile"
+                          type="file"
+                          accept="video/*"
+                          onChange={(event) => handleVideoChange(event.target.files?.[0] ?? null)}
+                          required
+                        />
+                        {videoPreview && (
+                          <div className="mt-3">
+                            <video src={videoPreview} controls className="h-32 w-56 rounded-md border bg-black" />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
               <div className="flex items-center space-x-2">
                 <Switch
@@ -463,6 +589,9 @@ const MarketingProjects = () => {
                   </div>
                   {project.mediaUrl && project.mediaType !== 'video' && (
                     <img src={project.mediaUrl} alt={project.title} className="h-40 w-full object-cover rounded-md border" />
+                  )}
+                  {project.mediaUrl && project.mediaType === 'video' && (
+                    <video src={project.mediaUrl} controls className="h-40 w-full rounded-md border bg-black" />
                   )}
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{project.summary}</p>
                 </div>

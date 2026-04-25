@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileText, Upload, Briefcase, Paperclip, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/useAuth';
 
 interface Job {
   id: string;
@@ -25,6 +26,7 @@ const JobApplication = () => {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { profile } = useAuth();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -35,6 +37,20 @@ const JobApplication = () => {
     coverLetter: '',
     cvFile: null as File | null
   });
+
+  useEffect(() => {
+    if (!profile) return;
+
+    setFormData((prev) => {
+      const next = { ...prev };
+
+      if (!next.name && profile.full_name) next.name = profile.full_name;
+      if (!next.email && profile.email) next.email = profile.email;
+      if (!next.phone && profile.phone) next.phone = profile.phone;
+
+      return next;
+    });
+  }, [profile]);
 
   useEffect(() => {
     fetchJob();
@@ -115,9 +131,13 @@ const JobApplication = () => {
 
       navigate('/careers');
     } catch (error: any) {
+      const message = String(error?.message ?? "");
+      const isDuplicate = message.includes("duplicate_application_per_job") || message.toLowerCase().includes("duplicate");
       toast({
         title: "Submission Error",
-        description: error.message,
+        description: isDuplicate
+          ? "You have already applied for this job. You can only apply once per job."
+          : error.message,
         variant: "destructive",
       });
     } finally {
