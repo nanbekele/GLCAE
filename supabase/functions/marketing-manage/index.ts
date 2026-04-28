@@ -8,8 +8,145 @@ import { decode, verify } from "https://deno.land/x/djwt@v2.9/mod.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-gcae-auth",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const base64UrlEncode = (input: Uint8Array) => {
+  let binary = "";
+  for (let i = 0; i < input.length; i++) binary += String.fromCharCode(input[i]);
+  const base64 = btoa(binary);
+  return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const getGmailAccessToken = async (params: { clientId: string; clientSecret: string; refreshToken: string }) => {
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: params.clientId,
+      client_secret: params.clientSecret,
+      refresh_token: params.refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`Gmail token error (${response.status}): ${JSON.stringify(data)}`);
+  }
+
+  const token = data?.access_token;
+  if (!token) throw new Error("Gmail token error: missing access_token");
+  return String(token);
+};
+
+const sendContactReplyEmailViaGmail = async (
+  config: {
+    clientId: string;
+    clientSecret: string;
+    refreshToken: string;
+    senderEmail: string | null;
+  },
+  to: string,
+  subject: string,
+  body: string,
+  recipientName?: string | null,
+  senderName?: string | null,
+) => {
+  const accessToken = await getGmailAccessToken({
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    refreshToken: config.refreshToken,
+  });
+
+  const from = config.senderEmail;
+  if (!from) {
+    throw new Error("Gmail sender email is not configured");
+  }
+
+  const greetingName = recipientName || "there";
+  const finalSender = senderName || "GCAE Marketing Team";
+  const safeText = `Hello ${greetingName},\n\n${body}\n\nBest regards,\n${finalSender}`;
+
+  const mime = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    safeText,
+  ].join("\r\n");
+
+  const raw = base64UrlEncode(new TextEncoder().encode(mime));
+
+  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ raw }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`Gmail API error (${response.status}): ${errorText}`);
+  }
+};
+
+const sendHtmlEmailViaGmail = async (
+  config: {
+    clientId: string;
+    clientSecret: string;
+    refreshToken: string;
+    senderEmail: string | null;
+  },
+  to: string,
+  subject: string,
+  htmlBody: string,
+  replyTo?: string | null,
+) => {
+  const accessToken = await getGmailAccessToken({
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    refreshToken: config.refreshToken,
+  });
+
+  const from = config.senderEmail;
+  if (!from) {
+    throw new Error("Gmail sender email is not configured");
+  }
+
+  const mime = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    ...(replyTo ? [`Reply-To: ${replyTo}`] : []),
+    "MIME-Version: 1.0",
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: 7bit",
+    "",
+    htmlBody,
+  ].join("\r\n");
+
+  const raw = base64UrlEncode(new TextEncoder().encode(mime));
+
+  const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ raw }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`Gmail API error (${response.status}): ${errorText}`);
+  }
 };
 
 // List consultancy requests for the authenticated client
@@ -64,6 +201,65 @@ const listEmployeeConsultancyRequests = async (
     status: 200,
     body: { requests: data ?? [] },
   } as const;
+};
+
+const updateEmployeeConsultancyStatus = async (
+  supabaseAdmin: ReturnType<typeof createClient>,
+  profile: any,
+  payload: any,
+) => {
+  const { id, status } = payload ?? {};
+  const requestId = typeof id === "string" ? id.trim() : null;
+  const normalizedStatus = typeof status === "string" ? status.trim().toLowerCase() : null;
+
+  if (!requestId) {
+    return { status: 400, body: { error: "id is required" } } as const;
+  }
+
+  const allowed = new Set(["pending", "scheduled", "completed", "cancelled", "in_progress"]);
+  if (!normalizedStatus || !allowed.has(normalizedStatus)) {
+    return { status: 400, body: { error: "Invalid status" } } as const;
+  }
+
+  const profileId = profile?.id ?? null;
+  if (!profileId) {
+    return { status: 401, body: { error: "Profile not found" } } as const;
+  }
+
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("consultancyrequest")
+    .select("id, assigned_employee")
+    .eq("id", requestId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { status: 400, body: { error: fetchError.message } } as const;
+  }
+
+  if (!existing) {
+    return { status: 404, body: { error: "Request not found" } } as const;
+  }
+
+  if (existing.assigned_employee !== profileId) {
+    return { status: 403, body: { error: "Forbidden" } } as const;
+  }
+
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from("consultancyrequest")
+    .update({ status: normalizedStatus })
+    .eq("id", requestId)
+    .select("*")
+    .maybeSingle();
+
+  if (updateError) {
+    return { status: 400, body: { error: updateError.message } } as const;
+  }
+
+  if (!updated) {
+    return { status: 404, body: { error: "Request not found" } } as const;
+  }
+
+  return { status: 200, body: { success: true, request: updated } } as const;
 };
 
 const NEWS_BUCKET = "news-media";
@@ -152,6 +348,8 @@ const deleteStorageObject = async (
   }
 };
 
+const NEWS_MEDIA_BUCKET = "news-media";
+
 const resolveStoragePublicUrl = (
   supabaseAdmin: ReturnType<typeof createClient>,
   bucket: string,
@@ -226,7 +424,7 @@ const buildProjectResponse = (
   row: any,
 ) => {
   let mediaUrl: string | null = row.media_url ?? null;
-  if (row.media_type === "image" && mediaUrl) {
+  if (mediaUrl && !mediaUrl.includes("://")) {
     mediaUrl = resolveStoragePublicUrl(supabaseAdmin, PROJECT_BUCKET, mediaUrl);
   }
 
@@ -299,8 +497,8 @@ const submitServiceRequest = async (payload: any, fallbackProfile: any | null) =
 
   const { data: clientProfile, error: clientProfileError } = await serviceClient
     .from("profiles")
-    .select("id, role, department")
-    .eq("id", clientId)
+    .select("id, user_id, role, department")
+    .or(`id.eq.${clientId},user_id.eq.${clientId}`)
     .maybeSingle();
 
   if (clientProfileError) {
@@ -551,8 +749,8 @@ const submitConsultancyRequest = async (payload: any, fallbackProfile: any | nul
 
   const { data: clientProfile, error: clientProfileError } = await serviceClient
     .from("profiles")
-    .select("id, role")
-    .eq("id", clientId)
+    .select("id, user_id, role")
+    .or(`id.eq.${clientId},user_id.eq.${clientId}`)
     .maybeSingle();
 
   if (clientProfileError) {
@@ -757,6 +955,7 @@ const sendInterviewSchedule = async (
   payload: any,
 ) => {
   const {
+    jobId,
     applicantName,
     applicantEmail,
     position,
@@ -765,9 +964,11 @@ const sendInterviewSchedule = async (
     scheduledFor,
     location,
     notes,
+    sendApplicantEmail,
+    sendInterviewerEmail,
   } = payload ?? {};
 
-  if (!applicantName || !applicantEmail || !position || !interviewer || !interviewerEmail || !scheduledFor || !location) {
+  if (!jobId || !applicantName || !applicantEmail || !position || !interviewer || !interviewerEmail || !scheduledFor || !location) {
     return {
       status: 400,
       body: { error: "Missing interview details" },
@@ -782,7 +983,7 @@ const sendInterviewSchedule = async (
     };
   }
 
-  // New behavior: persist schedule to dashboards (no email sending)
+  let scheduleRow: any = null;
   try {
     const normalizedApplicantEmail = typeof applicantEmail === "string" ? applicantEmail.trim().toLowerCase() : applicantEmail;
     const normalizedInterviewerEmail = typeof interviewerEmail === "string" ? interviewerEmail.trim().toLowerCase() : interviewerEmail;
@@ -811,9 +1012,10 @@ const sendInterviewSchedule = async (
       // best-effort only
     }
 
-    const { data: scheduleRow, error: insertError } = await supabaseAdmin
+    const { data, error: insertError } = await supabaseAdmin
       .from("interview_schedule_logs")
       .insert({
+        job_id: jobId,
         applicant_name: applicantName,
         applicant_email: normalizedApplicantEmail,
         interviewer,
@@ -833,10 +1035,13 @@ const sendInterviewSchedule = async (
       return { status: 400, body: { error: insertError.message } } as const;
     }
 
-    return { status: 200, body: { success: true, schedule: scheduleRow } } as const;
+    scheduleRow = data ?? null;
   } catch (e) {
     return { status: 500, body: { error: String(e) } } as const;
   }
+
+  const shouldEmailApplicant = sendApplicantEmail !== false;
+  const shouldEmailInterviewer = sendInterviewerEmail !== false;
 
   const organizerName = profile?.full_name ?? "HR Team";
   const organizerEmail = profile?.email ?? null;
@@ -895,7 +1100,34 @@ const sendInterviewSchedule = async (
   const candidateFromEmail = envFromEmail ?? organizerEmail ?? null;
   const resolvedFromName = envFromEmail ? envFromName : organizerName;
 
+  const gmailClientId = Deno.env.get("GMAIL_CLIENT_ID");
+  const gmailClientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
+  const gmailRefreshToken = Deno.env.get("GMAIL_REFRESH_TOKEN");
+  const gmailSenderEmail = Deno.env.get("GMAIL_SENDER_EMAIL") ?? null;
+  const gmailConfigured = Boolean(gmailClientId && gmailClientSecret && gmailRefreshToken);
+
   const sendWithFallback = async (to: string, subject: string, body: string, label: string) => {
+    if (gmailConfigured) {
+      try {
+        await sendHtmlEmailViaGmail(
+          {
+            clientId: gmailClientId,
+            clientSecret: gmailClientSecret,
+            refreshToken: gmailRefreshToken,
+            senderEmail: gmailSenderEmail ?? organizerEmail ?? null,
+          },
+          to,
+          subject,
+          body,
+          organizerEmail,
+        );
+        return null;
+      } catch (error) {
+        console.warn(`[marketing-manage] ${label} Gmail attempt failed`, error);
+        return `${label}: ${String(error)}`;
+      }
+    }
+
     if (!resendApiKey) {
       return `${label}: Email service not configured`;
     }
@@ -928,45 +1160,23 @@ const sendInterviewSchedule = async (
   };
 
   const [applicantSendError, interviewerSendError] = await Promise.all([
-    sendWithFallback(applicantEmail, `Interview Scheduled: ${position}`, applicantBody, "applicant"),
-    sendWithFallback(interviewerEmail, `Interview Assignment: ${position}`, interviewerBody, "interviewer"),
+    shouldEmailApplicant ? sendWithFallback(applicantEmail, `Interview Scheduled: ${position}`, applicantBody, "applicant") : null,
+    shouldEmailInterviewer ? sendWithFallback(interviewerEmail, `Interview Assignment: ${position}`, interviewerBody, "interviewer") : null,
   ]);
 
   const sendErrors = [applicantSendError, interviewerSendError].filter((value): value is string => Boolean(value));
-
-  const { error } = await supabaseAdmin
-    .from("interview_schedule_logs")
-    .insert({
-      applicant_name: applicantName,
-      applicant_email: applicantEmail,
-      interviewer,
-      interviewer_email: interviewerEmail,
-      position,
-      scheduled_for: scheduleDate.toISOString(),
-      location,
-      notes,
-      organized_by: profile?.id ?? null,
-    });
-
-  if (error) {
-    console.error("[marketing-manage] Failed to log interview schedule", error);
-    return {
-      status: 500,
-      body: { error: "Interview emails sent but logging failed" },
-    };
-  }
 
   if (sendErrors.length > 0) {
     console.warn("[marketing-manage] Interview emails completed with warnings", sendErrors);
     return {
       status: 207,
-      body: { success: true, emailWarnings: sendErrors },
+      body: { success: true, schedule: scheduleRow ?? undefined, emailWarnings: sendErrors },
     };
   }
 
   return {
     status: 200,
-    body: { success: true },
+    body: { success: true, schedule: scheduleRow ?? undefined },
   };
 };
 
@@ -1023,8 +1233,8 @@ const submitClientFeedback = async (payload: any, fallbackProfile: any | null) =
 
   const { data: clientProfile, error: clientProfileError } = await serviceClient
     .from("profiles")
-    .select("id, role")
-    .eq("id", clientId)
+    .select("id, user_id, role")
+    .or(`id.eq.${clientId},user_id.eq.${clientId}`)
     .maybeSingle();
 
   if (clientProfileError) {
@@ -1215,6 +1425,46 @@ const requireAdminOrHr = async (auth: AuthContext | null) => {
   }
 
   return ensuredAuth;
+};
+
+const getProfileEmail = async (
+  supabaseAdmin: ReturnType<typeof createClient>,
+  body: any,
+) => {
+  const { profileId } = body ?? {};
+  const id = typeof profileId === "string" ? profileId.trim() : "";
+
+  if (!id) {
+    return {
+      status: 400,
+      body: { error: "profileId is required" },
+    } as const;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("profiles")
+    .select("id, email")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      status: 400,
+      body: { error: error.message },
+    } as const;
+  }
+
+  if (!data) {
+    return {
+      status: 404,
+      body: { error: "Profile not found" },
+    } as const;
+  }
+
+  return {
+    status: 200,
+    body: { success: true, profile: data },
+  } as const;
 };
 
 const requireAdminRole = async (auth: AuthContext | null) => {
@@ -1783,6 +2033,95 @@ const listClientInterviewSchedules = async (
   return { status: 200, body: { schedules: data ?? [] } } as const;
 };
 
+// List interview schedules for HR staff (all schedules, newest first)
+const listHrInterviewSchedules = async (
+  supabaseAdmin: ReturnType<typeof createClient>,
+  limit = 100,
+  status?: string | null,
+) => {
+  let query = supabaseAdmin
+    .from("interview_schedule_logs")
+    .select("*")
+    .order("scheduled_for", { ascending: false })
+    .limit(limit);
+
+  const normalizedStatus = typeof status === "string" ? status.trim().toLowerCase() : "";
+  if (normalizedStatus) {
+    query = query.eq("status", normalizedStatus);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    return { status: 400, body: { error: error.message } } as const;
+  }
+  return { status: 200, body: { schedules: data ?? [] } } as const;
+};
+
+// HR can update interview schedule status without the employee ownership restriction
+// NOTE: HR update is intentionally not exposed. Only the interviewer (employee) can update status.
+
+const updateInterviewScheduleStatus = async (
+  supabaseAdmin: ReturnType<typeof createClient>,
+  profile: any,
+  payload: any,
+) => {
+  const { id, status } = payload ?? {};
+  const scheduleId = typeof id === "string" ? id.trim() : null;
+  const normalizedStatus = typeof status === "string" ? status.trim().toLowerCase() : null;
+
+  if (!scheduleId) {
+    return { status: 400, body: { error: "id is required" } } as const;
+  }
+
+  const allowed = new Set(["waiting", "confirmed", "completed", "cancelled"]);
+  if (!normalizedStatus || !allowed.has(normalizedStatus)) {
+    return { status: 400, body: { error: "Invalid status" } } as const;
+  }
+
+  const profileId = profile?.id ?? null;
+  const email = String(profile?.email ?? "").toLowerCase();
+  if (!profileId && !email) {
+    return { status: 401, body: { error: "Profile not found" } } as const;
+  }
+
+  const { data: existing, error: fetchError } = await supabaseAdmin
+    .from("interview_schedule_logs")
+    .select("id, interviewer_profile_id, interviewer_email")
+    .eq("id", scheduleId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { status: 400, body: { error: fetchError.message } } as const;
+  }
+
+  if (!existing) {
+    return { status: 404, body: { error: "Schedule not found" } } as const;
+  }
+
+  const matchesProfile = profileId && existing.interviewer_profile_id && existing.interviewer_profile_id === profileId;
+  const matchesEmail = email && String(existing.interviewer_email ?? "").toLowerCase() === email;
+  if (!matchesProfile && !matchesEmail) {
+    return { status: 403, body: { error: "Forbidden" } } as const;
+  }
+
+  const { data: updated, error: updateError } = await supabaseAdmin
+    .from("interview_schedule_logs")
+    .update({ status: normalizedStatus })
+    .eq("id", scheduleId)
+    .select("*")
+    .maybeSingle();
+
+  if (updateError) {
+    return { status: 400, body: { error: updateError.message } } as const;
+  }
+
+  if (!updated) {
+    return { status: 404, body: { error: "Schedule not found" } } as const;
+  }
+
+  return { status: 200, body: { success: true, schedule: updated } } as const;
+};
+
 // List interview schedules for the authenticated employee (interviewer) by profile id or email
 const listEmployeeInterviewSchedules = async (
   supabaseAdmin: ReturnType<typeof createClient>,
@@ -2327,13 +2666,24 @@ const createProject = async (supabaseAdmin: ReturnType<typeof createClient>, pay
       };
     }
   } else {
-    if (!isNonEmptyString(mediaUrl)) {
-      return {
-        status: 400,
-        body: { error: "mediaUrl is required for video projects" },
-      };
+    if (isDataUrl(mediaDataUrl)) {
+      try {
+        mediaPath = await uploadDataUrlToStorage(supabaseAdmin, PROJECT_BUCKET, "projects", mediaDataUrl);
+      } catch (err) {
+        return {
+          status: 400,
+          body: { error: (err as Error).message },
+        };
+      }
+    } else {
+      if (!isNonEmptyString(mediaUrl)) {
+        return {
+          status: 400,
+          body: { error: "mediaUrl (or mediaDataUrl) is required for video projects" },
+        };
+      }
+      mediaDirectUrl = mediaUrl.trim();
     }
-    mediaDirectUrl = mediaUrl.trim();
   }
 
   const slug = trimmedTitle.toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]/g, "");
@@ -2347,7 +2697,7 @@ const createProject = async (supabaseAdmin: ReturnType<typeof createClient>, pay
       status: normalizedStatus,
       slug,
       media_type: resolvedMediaType,
-      media_url: resolvedMediaType === "image" ? mediaPath : mediaDirectUrl,
+      media_url: mediaPath ?? mediaDirectUrl,
       featured: Boolean(featured),
       visibility: "public",
     })
@@ -2463,6 +2813,24 @@ const updateProject = async (supabaseAdmin: ReturnType<typeof createClient>, pay
         body: { error: (err as Error).message },
       };
     }
+  } else if (resolvedMediaType === "video" && typeof mediaDataUrl === "string") {
+    if (!isDataUrl(mediaDataUrl)) {
+      return {
+        status: 400,
+        body: { error: "mediaDataUrl must be a valid data URL" },
+      };
+    }
+
+    try {
+      uploadedPath = await uploadDataUrlToStorage(supabaseAdmin, PROJECT_BUCKET, "projects", mediaDataUrl);
+      mediaPath = uploadedPath;
+      mediaDirectUrl = null;
+    } catch (err) {
+      return {
+        status: 400,
+        body: { error: (err as Error).message },
+      };
+    }
   } else if (resolvedMediaType === "video" && typeof mediaUrl === "string") {
     mediaDirectUrl = mediaUrl.trim();
     mediaPath = null;
@@ -2474,7 +2842,7 @@ const updateProject = async (supabaseAdmin: ReturnType<typeof createClient>, pay
     summary: trimmedSummary,
     status: normalizedStatus,
     media_type: resolvedMediaType,
-    media_url: resolvedMediaType === "image" ? mediaPath : mediaDirectUrl,
+    media_url: mediaPath ?? mediaDirectUrl,
   };
 
   if (typeof featured === "boolean") {
@@ -2506,7 +2874,13 @@ const updateProject = async (supabaseAdmin: ReturnType<typeof createClient>, pay
     };
   }
 
-  if (uploadedPath && existing.media_type === "image" && existing.media_url && existing.media_url !== uploadedPath) {
+  if (
+    uploadedPath &&
+    typeof existing.media_url === "string" &&
+    existing.media_url &&
+    !existing.media_url.includes("://") &&
+    existing.media_url !== uploadedPath
+  ) {
     await deleteStorageObject(supabaseAdmin, PROJECT_BUCKET, existing.media_url);
   }
 
@@ -2635,7 +3009,12 @@ const replyToContactMessage = async (
 
   const disableEmails = (Deno.env.get("EDGE_DISABLE_OUTBOUND_EMAILS") ?? "").toLowerCase() === "true";
   const resendApiKey = Deno.env.get("RESEND_API_KEY");
-  if (disableEmails || !resendApiKey) {
+  const gmailClientId = Deno.env.get("GMAIL_CLIENT_ID");
+  const gmailClientSecret = Deno.env.get("GMAIL_CLIENT_SECRET");
+  const gmailRefreshToken = Deno.env.get("GMAIL_REFRESH_TOKEN");
+  const gmailSenderEmail = Deno.env.get("GMAIL_SENDER_EMAIL") ?? null;
+
+  if (disableEmails || (!resendApiKey && !(gmailClientId && gmailClientSecret && gmailRefreshToken))) {
     // Dry-run in local/dev: mark as replied without sending email
     const { error: updateErr } = await supabaseAdmin
       .from("contact_messages")
@@ -2651,20 +3030,76 @@ const replyToContactMessage = async (
     ? subject.trim()
     : `Re: ${message.subject ?? "Your inquiry"}`;
 
+  const classifyEmailSendFailure = (value: unknown) => {
+    const msg = String(value ?? "");
+    const lower = msg.toLowerCase();
+
+    const gmailStatusMatch = msg.match(/Gmail API error \((\d+)\)/i);
+    const gmailStatus = gmailStatusMatch ? Number(gmailStatusMatch[1]) : null;
+    const resendStatusMatch = msg.match(/Resend API error \((\d+)\)/i);
+    const resendStatus = resendStatusMatch ? Number(resendStatusMatch[1]) : null;
+
+    if (
+      lower.includes("timeout") ||
+      lower.includes("network is unreachable") ||
+      lower.includes("enetwork") ||
+      lower.includes("enetunreach") ||
+      lower.includes("econn")
+    ) {
+      return "network_unreachable";
+    }
+
+    if (resendStatus === 401) return "email_unauthorized";
+    if (resendStatus === 403) return "email_forbidden";
+    if (resendStatus === 429) return "email_rate_limited";
+
+    if (gmailStatus === 401) return "email_unauthorized";
+    if (gmailStatus === 403) return "email_forbidden";
+    if (gmailStatus === 429) return "email_rate_limited";
+
+    if (
+      resendStatus === 422 ||
+      lower.includes("from") && (lower.includes("verify") || lower.includes("verified"))
+    ) {
+      return "email_sender_not_verified";
+    }
+
+    if (lower.includes("invalid_grant") || lower.includes("unauthorized_client")) return "email_unauthorized";
+
+    if (lower.includes("invalid api key") || lower.includes("invalid_token")) return "email_invalid_api_key";
+
+    return "email_service_error";
+  };
+
   try {
-    await sendContactReplyEmail(
-      resendApiKey,
-      message.email,
-      replySubject,
-      body.trim(),
-      message.name,
-      profile?.full_name ?? profile?.email ?? "GCAE Marketing Team",
-    );
+    if (gmailClientId && gmailClientSecret && gmailRefreshToken) {
+      await sendContactReplyEmailViaGmail(
+        {
+          clientId: gmailClientId,
+          clientSecret: gmailClientSecret,
+          refreshToken: gmailRefreshToken,
+          senderEmail: gmailSenderEmail ?? profile?.email ?? null,
+        },
+        message.email,
+        replySubject,
+        body.trim(),
+        message.name,
+        profile?.full_name ?? profile?.email ?? "GCAE Marketing Team",
+      );
+    } else if (resendApiKey) {
+      await sendContactReplyEmail(
+        resendApiKey,
+        message.email,
+        replySubject,
+        body.trim(),
+        message.name,
+        profile?.full_name ?? profile?.email ?? "GCAE Marketing Team",
+      );
+    } else {
+      throw new Error("Missing email configuration");
+    }
   } catch (err) {
-    // Do not hang the client; return a quick, sanitized error
-    const msg = String(err ?? "");
-    const reason = msg.includes("timeout") || msg.includes("Network is unreachable") ? "network_unreachable" : "email_service_error";
-    return { status: 502, body: { error: reason } };
+    return { status: 502, body: { error: classifyEmailSendFailure(err) } };
   }
 
   const { error: updateError } = await supabaseAdmin
@@ -3079,10 +3514,28 @@ const createGalleryImage = async (
     };
   }
 
-  if (typeof imageDataUrl !== "string" || !imageDataUrl.startsWith("data:image/")) {
+  if (!isDataUrl(imageDataUrl)) {
     return {
       status: 400,
-      body: { error: "Invalid image payload. Expected data URL." },
+      body: { error: "Invalid media payload. Expected data URL." },
+    };
+  }
+
+  const { mimeType } = parseDataUrl(imageDataUrl);
+  if (!mimeType.startsWith("image/") && !mimeType.startsWith("video/")) {
+    return {
+      status: 400,
+      body: { error: "Invalid media type. Expected image/* or video/*" },
+    };
+  }
+
+  let storedPath: string;
+  try {
+    storedPath = await uploadDataUrlToStorage(supabaseAdmin, NEWS_MEDIA_BUCKET, "gallery", imageDataUrl);
+  } catch (err) {
+    return {
+      status: 400,
+      body: { error: (err as Error).message },
     };
   }
 
@@ -3091,7 +3544,7 @@ const createGalleryImage = async (
     .insert({
       title,
       description: description ?? null,
-      image_url: imageDataUrl,
+      image_url: storedPath,
       is_featured: Boolean(isFeatured),
       uploaded_by: profile.id,
     });
@@ -3162,6 +3615,19 @@ const deleteGalleryImage = async (supabaseAdmin: ReturnType<typeof createClient>
     };
   }
 
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("gallery_images")
+    .select("id, image_url")
+    .eq("id", imageId)
+    .maybeSingle();
+
+  if (existingError) {
+    return {
+      status: 400,
+      body: { error: existingError.message },
+    };
+  }
+
   const { error } = await supabaseAdmin
     .from("gallery_images")
     .delete()
@@ -3219,6 +3685,30 @@ const sendSystemEmail = async (
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Resend API error (${response.status}): ${errorText}`);
+  }
+};
+
+const sendNewsletterViaGmail = async (
+  config: {
+    clientId: string;
+    clientSecret: string;
+    refreshToken: string;
+    senderEmail: string | null;
+  },
+  emails: string[],
+  post: { title: string | null; content: string | null },
+) => {
+  const subject = `New article: ${post.title ?? "Vision Hub Update"}`;
+  const html = `
+      <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto;">
+        <h1 style="color: #111827; font-size: 20px;">${post.title ?? "New update from GCAE Vision Hub"}</h1>
+        <p style="color: #374151; font-size: 14px; white-space: pre-wrap;">${(post.content ?? "").slice(0, 320)}</p>
+        <p style="color: #6b7280; font-size: 12px;">Visit the Vision Hub portal to read the full story.</p>
+      </div>
+    `;
+
+  for (const email of emails) {
+    await sendHtmlEmailViaGmail(config, email, subject, html);
   }
 };
 
@@ -3375,31 +3865,65 @@ const publishPost = async (supabaseAdmin: ReturnType<typeof createClient>, paylo
     sendSummary.reason = "no-subscribers";
   }
 
-  const resendApiKey = Deno.env.get("RESEND_API_KEY");
-  if (resendApiKey && emails.length > 0) {
+  const gmailClientId = Deno.env.get("GMAIL_CLIENT_ID") ?? "";
+  const gmailClientSecret = Deno.env.get("GMAIL_CLIENT_SECRET") ?? "";
+  const gmailRefreshToken = Deno.env.get("GMAIL_REFRESH_TOKEN") ?? "";
+  const gmailSenderEmail = Deno.env.get("GMAIL_SENDER_EMAIL") ?? null;
+
+  const hasGmail = !!(gmailClientId && gmailClientSecret && gmailRefreshToken && gmailSenderEmail);
+
+  if (hasGmail && emails.length > 0) {
     try {
-      await sendNewsletter(resendApiKey, emails, {
-        title: updatedPost.title,
-        content: updatedPost.content,
-      });
+      await sendNewsletterViaGmail(
+        {
+          clientId: gmailClientId,
+          clientSecret: gmailClientSecret,
+          refreshToken: gmailRefreshToken,
+          senderEmail: gmailSenderEmail,
+        },
+        emails,
+        {
+          title: updatedPost.title,
+          content: updatedPost.content,
+        },
+      );
       sendSummary.sent = true;
+      sendSummary.mode = "gmail";
     } catch (err) {
-      console.error("[marketing-manage] Failed to send newsletter via Resend", err);
+      console.error("[marketing-manage] Failed to send newsletter via Gmail", err);
       sendSummary.sent = false;
-      const msg = String(err ?? "");
-      if (
-        msg.includes("Network is unreachable") ||
-        msg.includes("connect error") ||
-        msg.includes("ENETUNREACH") ||
-        msg.includes("ECONN")
-      ) {
-        sendSummary.reason = "network_unreachable";
-      } else {
-        sendSummary.reason = "email_service_error";
-      }
+      sendSummary.mode = "gmail";
+      sendSummary.reason = "email_service_error";
     }
-  } else if (!resendApiKey && emails.length > 0) {
-    sendSummary.mode = "dry-run";
+  } else {
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    if (resendApiKey && emails.length > 0) {
+      try {
+        await sendNewsletter(resendApiKey, emails, {
+          title: updatedPost.title,
+          content: updatedPost.content,
+        });
+        sendSummary.sent = true;
+        sendSummary.mode = "resend";
+      } catch (err) {
+        console.error("[marketing-manage] Failed to send newsletter via Resend", err);
+        sendSummary.sent = false;
+        sendSummary.mode = "resend";
+        const msg = String(err ?? "");
+        if (
+          msg.includes("Network is unreachable") ||
+          msg.includes("connect error") ||
+          msg.includes("ENETUNREACH") ||
+          msg.includes("ECONN")
+        ) {
+          sendSummary.reason = "network_unreachable";
+        } else {
+          sendSummary.reason = "email_service_error";
+        }
+      }
+    } else if (emails.length > 0) {
+      sendSummary.mode = "dry-run";
+    }
   }
 
   return {
@@ -3499,8 +4023,11 @@ serve(async (req) => {
     "consultancy-schedule": ["architectural_civil_head", "mechanical_head", "ict_head", "material_testing_head", "super_admin"],
     "client-list-consultancy-requests": ["client", "super_admin"],
     "employee-list-consultancy-requests": ["employee", "super_admin"],
+    "employee-update-consultancy-status": ["employee", "super_admin"],
     "client-list-interview-schedules": ["client", "super_admin"],
     "employee-list-interview-schedules": ["employee", "super_admin"],
+    "employee-update-interview-schedule-status": ["employee", "super_admin"],
+    "hr-list-interview-schedules": ["hr_staff", "hr_manager", "super_admin"],
     "hr-create-job": ["hr_staff", "hr_manager", "super_admin"],
     "hr-list-jobs": ["hr_staff", "hr_manager", "super_admin"],
     "hr-update-job": ["hr_staff", "hr_manager", "super_admin"],
@@ -3513,6 +4040,7 @@ serve(async (req) => {
     "admin-hr-list-messages": ["super_admin", "hr_staff", "hr_manager"],
     "admin-hr-send-message": ["super_admin", "hr_staff", "hr_manager"],
     "admin-hr-reset-messages": ["super_admin"],
+    "hr-get-profile-email": ["super_admin", "hr_staff", "hr_manager"],
     "list-employees-by-department": [
       "ict_head",
       "mechanical_head",
@@ -3578,6 +4106,15 @@ serve(async (req) => {
         });
       }
 
+      case "employee-update-consultancy-status": {
+        const ensuredAuth = await requireAuth(auth);
+        const result = await updateEmployeeConsultancyStatus(ensuredAuth.supabaseAdmin, ensuredAuth.profile, body);
+        return new Response(JSON.stringify(result.body), {
+          status: result.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       case "client-list-interview-schedules": {
         const ensuredAuth = await requireAuth(auth);
         const limit = typeof body?.limit === "number" ? body.limit : 100;
@@ -3592,6 +4129,26 @@ serve(async (req) => {
         const ensuredAuth = await requireAuth(auth);
         const limit = typeof body?.limit === "number" ? body.limit : 100;
         const result = await listEmployeeInterviewSchedules(ensuredAuth.supabaseAdmin, ensuredAuth.profile, limit);
+        return new Response(JSON.stringify(result.body), {
+          status: result.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "employee-update-interview-schedule-status": {
+        const ensuredAuth = await requireAuth(auth);
+        const result = await updateInterviewScheduleStatus(ensuredAuth.supabaseAdmin, ensuredAuth.profile, body);
+        return new Response(JSON.stringify(result.body), {
+          status: result.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "hr-list-interview-schedules": {
+        const ensuredAuth = await requireAuth(auth);
+        const limit = typeof body?.limit === "number" ? body.limit : 100;
+        const status = typeof body?.status === "string" ? body.status : null;
+        const result = await listHrInterviewSchedules(ensuredAuth.supabaseAdmin, limit, status);
         return new Response(JSON.stringify(result.body), {
           status: result.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -3753,6 +4310,15 @@ serve(async (req) => {
       case "admin-hr-list-messages": {
         const ensuredAuth = await requireAdminOrHr(auth);
         const result = await listAdminHrMessages(ensuredAuth.supabaseAdmin);
+        return new Response(JSON.stringify(result.body), {
+          status: result.status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      case "hr-get-profile-email": {
+        const ensuredAuth = await requireAdminOrHr(auth);
+        const result = await getProfileEmail(ensuredAuth.supabaseAdmin, body);
         return new Response(JSON.stringify(result.body), {
           status: result.status,
           headers: { ...corsHeaders, "Content-Type": "application/json" },

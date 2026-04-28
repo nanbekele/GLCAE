@@ -5,7 +5,7 @@ import { decode, verify } from "https://deno.land/x/djwt@v2.9/mod.ts";
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-gcae-auth, X-Gcae-Auth",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 

@@ -1,10 +1,10 @@
-project_id = "vxzvjudwtbvcttdiciav"
-
-[functions.create-test-users]
-verify_jwt = false
+project_id = "fnnjcfveaykdnbupgarh"
 
 # Local development: disable JWT verification for these functions so the app
 # can call them while you finalize custom JWT signing. Do NOT enable in prod.
+[functions.create-test-users]
+verify_jwt = false
+
 [functions.auth-login]
 verify_jwt = false
 
@@ -12,6 +12,15 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.auth-get-profile]
+verify_jwt = false
+
+[functions.auth-change-password]
+verify_jwt = false
+
+[functions.auth-register-staff]
+verify_jwt = false
+
+[functions.send-newsletter]
 verify_jwt = false
 
 [functions.marketing-manage]
